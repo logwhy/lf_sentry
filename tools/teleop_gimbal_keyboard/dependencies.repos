@@ -1,0 +1,4 @@
+repositories:
+  pb_rm_interfaces:
+    url: https://github.com/SMBU-PolarBear-Robotics-Team/pb_rm_interfaces.git
+    version: main

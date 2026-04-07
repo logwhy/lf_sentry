@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sp_vision</name>
+  <version>0.0.0</version>
+  <description>Vision system with ROS2 compatibility</description>
+  <maintainer email="your@email.com">user</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>cmake</buildtool_depend> <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>pb_rm_interfaces</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>example_interfaces</depend>
+
+  <export>
+    <build_type>cmake</build_type> </export>
+</package>

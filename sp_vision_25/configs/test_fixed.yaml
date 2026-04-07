@@ -1,0 +1,20 @@
+enemy_color: "red"
+yolo_name: yolov5
+classify_model: assets/tiny_resnet.onnx
+yolo11_model_path: assets/yolo11.xml
+yolov8_model_path: assets/yolov8.xml
+yolov5_model_path: assets/yolov5.xml
+device: CPU
+min_confidence: 0.8
+use_traditional: true
+
+# 关键：使用 yolo11.xml 而不是 yolo11_buff_int8.xml
+model: "assets/yolo11.xml"
+
+# 简化其他参数
+roi: 
+  x: 420
+  y: 50
+  width: 600
+  height: 600
+use_roi: false

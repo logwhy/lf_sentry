@@ -1,0 +1,21 @@
+# camera_info.yaml
+image_width: 1440
+image_height: 1080
+camera_name: mv_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [1759.68866, 0, 733.10365, 0, 1744.21692, 545.62975, 0, 0, 1]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.101461, 0.183015, -0.001380, 0.000832, 0.000000]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1., 0., 0., 0., 1., 0., 0., 0., 1.]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [1737.27673, 0, 733.53554, 0, 0, 1728.41443, 544.48593, 0, 0, 0, 1, 0]

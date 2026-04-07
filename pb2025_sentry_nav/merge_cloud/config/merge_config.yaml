@@ -1,0 +1,15 @@
+lidar1:
+  roll: 0.0      
+  pitch: 0.0     
+  yaw: 0.0        
+  tx: 0.0
+  ty: 0.0
+  tz: 0.0
+
+lidar2:
+  roll: -1.5707963268
+  pitch: 0.0
+  yaw: 0.0
+  tx: 0.0
+  ty: -0.191
+  tz: -0.22

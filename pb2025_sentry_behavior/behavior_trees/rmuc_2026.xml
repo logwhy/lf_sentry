@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="check_game_start">
+    <Fallback>
+      <IsGameStatus name="IsGameStart"
+                    max_remain_time="420"
+                    min_remain_time="0"
+                    expected_game_progress="4"
+                    key_port="{@referee_gameStatus}"/>
+      <ForceFailure>
+        <Sequence>
+          <PublishSpinSpeed spin_speed="0.0"
+                            duration="0.0"
+                            topic_name="cmd_spin"/>
+          <PublishTwist v_y="0.0"
+                        v_yaw="0.0"
+                        v_x="0.0"
+                        duration="0.0"
+                        topic_name="cmd_vel"/>
+        </Sequence>
+      </ForceFailure>
+    </Fallback>
+  </BehaviorTree>
+
+  <BehaviorTree ID="rmuc_2026">
+    <KeepRunningUntilFailure>
+      <ForceSuccess>
+        <ReactiveSequence>
+          
+          <SubTree ID="check_game_start"/>
+          
+          <ReactiveFallback>
+            
+            <Sequence>
+              <IsDead/>
+              <CanFreeRespawn/>
+              <SetSentryCmd confirm_respawn="true"/>
+            </Sequence>
+
+            <Sequence>
+              <IsHpLessThan threshold="0.3"/>
+              
+              <SetSentryCmd posture_command="3"/> 
+              <PublishSpinSpeed spin_speed="0.0" duration="0.0" topic_name="cmd_spin"/>
+              <PubNav2Goal goal="0.0;0.0;0.0" topic_name="goal_pose"/>
+            </Sequence>
+
+            <Sequence>
+              <IsHpLessThan threshold="0.5"/>
+              
+              <SetSentryCmd posture_command="2"/> 
+              <PublishSpinSpeed spin_speed="15.0" duration="0.0" topic_name="cmd_spin"/>
+            </Sequence>
+
+            <Sequence>
+              <PubNav2Goal goal="4.65;-3.5;0" topic_name="goal_pose"/>
+              
+              <SetSentryCmd posture_command="1"/> 
+              
+              <PublishSpinSpeed spin_speed="7.0" duration="0.0" topic_name="cmd_spin"/>
+              
+            </Sequence>
+
+          </ReactiveFallback>
+        </ReactiveSequence>
+      </ForceSuccess>
+    </KeepRunningUntilFailure>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <Condition ID="IsGameStatus">
+      <input_port name="max_remain_time" default="420" type="int">Maximum remaining time (s)</input_port>
+      <input_port name="min_remain_time" default="0" type="int">Minimum remaining time (s)</input_port>
+      <input_port name="expected_game_progress" default="4" type="int">Expected game progress stage</input_port>
+      <input_port name="key_port" default="{@referee_gameStatus}" type="pb_rm_interfaces::msg::GameStatus_&lt;std::allocator&lt;void&gt; &gt;">GameStatus port on blackboard</input_port>
+    </Condition>
+    
+    <Condition ID="IsRfidDetected">
+      <input_port name="friendly_supply_zone_exchange" default="false" type="bool">己方與兌換區重疊的補給區</input_port>
+      <input_port name="friendly_supply_zone_non_exchange" default="false" type="bool">己方與兌換區不重疊的補給區 / RMUL 補給區</input_port>
+      <input_port name="center_gain_point" default="false" type="bool">中心增益點（僅 RMUL 適用）</input_port>
+      <input_port name="friendly_fortress_gain_point" default="false" type="bool">己方堡壘增益點</input_port>
+      <input_port name="key_port" default="{@referee_rfidStatus}" type="pb_rm_interfaces::msg::RfidStatus_&lt;std::allocator&lt;void&gt; &gt;">RfidStatus port on blackboard</input_port>
+    </Condition>
+    
+    <Condition ID="IsStatusOK">
+      <input_port name="ammo_min" default="0" type="int">Lower then minimum ammo will return FAILURE</input_port>
+      <input_port name="heat_max" default="350" type="int">Maximum heat. NOTE: Sentry heat limit is 400</input_port>
+      <input_port name="hp_min" default="300" type="int">Minimum HP. NOTE: Sentry init/max HP is 400</input_port>
+      <input_port name="key_port" default="{@referee_robotStatus}" type="pb_rm_interfaces::msg::RobotStatus_&lt;std::allocator&lt;void&gt; &gt;">RobotStatus port on blackboard</input_port>
+    </Condition>
+    
+    <Condition ID="IsDead"/>
+    <Condition ID="CanFreeRespawn"/>
+    <Condition ID="IsHpLessThan">
+      <input_port name="threshold" type="double">血量比例閾值 (0.0~1.0)</input_port>
+    </Condition>
+
+	<Action ID="PubNav2Goal">
+	  <input_port name="goal" default="0;0;0" type="geometry_msgs::msg::PoseStamped_<std::allocator<void> >">
+	    Expected goal pose that send to nav2. Fill with format `x;y;yaw`
+	  </input_port>
+	  <input_port name="topic_name" default="__default__placeholder__" type="std::string">
+	    Topic name
+	  </input_port>
+	</Action>
+    
+    <Action ID="PublishSpinSpeed">
+      <input_port name="spin_speed" default="0.000000" type="double">Angular Z velocity (rad/s)</input_port>
+      <input_port name="duration" type="std::chrono::milliseconds">Publish then sleep duration in milliseconds</input_port>
+      <input_port name="topic_name" default="__default__placeholder__" type="std::string">Topic name</input_port>
+    </Action>
+    
+    <Action ID="PublishTwist">
+      <input_port name="v_y" default="0.000000" type="double">Linear Y velocity (m/s)</input_port>
+      <input_port name="v_yaw" default="0.000000" type="double">Angular Z velocity (rad/s)</input_port>
+      <input_port name="v_x" default="0.000000" type="double">Linear X velocity (m/s)</input_port>
+      <input_port name="duration" type="std::chrono::milliseconds">Publish then sleep duration in milliseconds</input_port>
+      <input_port name="topic_name" default="__default__placeholder__" type="std::string">Topic name</input_port>
+    </Action>
+
+    <Action ID="SetSentryCmd">
+      <input_port name="confirm_respawn" default="false" type="bool">確認免費復活</input_port>
+      <input_port name="confirm_pay_respawn" default="false" type="bool">確認付費復活</input_port>
+      <input_port name="projectile_allowance_to_exchange" default="0" type="int">兌換發彈量</input_port>
+      <input_port name="remote_projectile_request_count" default="0" type="int">遠程兌換發彈量請求次數</input_port>
+      <input_port name="remote_hp_request_count" default="0" type="int">遠程兌換血量請求次數</input_port>
+      <input_port name="posture_command" default="0" type="int">切換姿態 (1進攻, 2防禦, 3移動)</input_port>
+      <input_port name="activate_rune" default="false" type="bool">激活能量機關</input_port>
+    </Action>
+    
+      <Condition ID="IsDead">
+    <input_port
+      name="key_port"
+      default="{@referee_robotStatus}">
+      RobotStatus port on blackboard
+    </input_port>
+  </Condition>
+
+  <Condition ID="CanFreeRespawn">
+    <input_port
+      name="key_port"
+      default="{@referee_sentryInfo}">
+      SentryInfo port on blackboard
+    </input_port>
+  </Condition>
+
+  <Condition ID="IsHpLessThan">
+    <input_port
+      name="key_port"
+      default="{@referee_robotStatus}">
+      RobotStatus port on blackboard
+    </input_port>
+    <input_port
+      name="threshold">
+      HP ratio threshold (0.0~1.0)
+    </input_port>
+  </Condition>
+
+  <Action ID="SetSentryCmd">
+    <input_port name="confirm_respawn"/>
+    <input_port name="confirm_pay_respawn"/>
+    <input_port name="projectile_allowance_to_exchange"/>
+    <input_port name="remote_projectile_request_count"/>
+    <input_port name="remote_hp_request_count"/>
+    <input_port name="posture_command"/>
+    <input_port name="activate_rune"/>
+  </Action>
+
+  </TreeNodesModel>
+
+</root>

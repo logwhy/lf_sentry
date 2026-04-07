@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+<BehaviorTree ID="tmp">
+    <KeepRunningUntilFailure>
+      <Sequence>
+        <PublishSpinSpeed spin_speed="17.0" 
+                          duration="0" 
+                          topic_name="cmd_spin"/>
+        <PublishTwist v_x="0.0" 
+                      v_y="0.0" 
+                      v_yaw="0.0" 
+                      duration="50" 
+                      topic_name="cmd_vel"/>
+        <PubNav2Goal goal="-5.06;1.1;0.0"
+                       topic_name="goal_pose"/>
+      </Sequence>
+    </KeepRunningUntilFailure>
+  </BehaviorTree>
+</root>

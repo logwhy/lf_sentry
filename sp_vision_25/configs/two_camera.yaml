@@ -1,0 +1,20 @@
+# 全局设置
+settings:
+  display_enabled: true      # 是否开启 OpenCV 窗口显示
+  save_path: "./captured"    # 截图保存路径
+
+# 相机 1 配置
+camera1:
+  serial_number: "00DA5751516"
+  exposure_time: 3000.0      # 曝光时间 (us)
+  gain: 10.0                 # 增益
+  width: 1280                # 期望宽度 (用于逻辑参考)
+  height: 720                # 期望高度
+
+# 相机 2 配置
+camera2:
+  serial_number: "00DA5751514"
+  exposure_time: 3000.0
+  gain: 10.0
+  width: 1280
+  height: 720

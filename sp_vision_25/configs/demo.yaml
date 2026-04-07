@@ -1,0 +1,151 @@
+enemy_color: "red"
+#enemy_color: "blue"
+
+#####-----神经网络参数-----#####
+yolo_name: yolov5
+classify_model: assets/tiny_resnet.onnx
+yolo11_model_path: assets/yolo11.xml
+yolov8_model_path: assets/yolov8.xml
+yolov5_model_path: assets/yolov5.xml
+0526_model_path: assets/0526.xml
+device: CPU
+min_confidence: 0.8
+use_traditional: true
+
+#####-----ROI-----#####
+roi: 
+  x: 420
+  y: 50
+  width: 600
+  height: 600
+
+use_roi: false
+
+#####-----传统方法参数-----#####
+threshold: 150
+max_angle_error: 45 # degree
+min_lightbar_ratio: 1.5
+max_lightbar_ratio: 20
+min_lightbar_length: 8
+min_armor_ratio: 1
+max_armor_ratio: 5
+max_side_ratio: 1.5
+max_rectangular_error: 25 # degree
+min_confidence: 0.8
+
+#####-----tracker参数-----#####
+min_detect_count: 5
+max_temp_lost_count: 15
+outpost_max_temp_lost_count: 75
+
+#####-----aimer参数-----#####
+yaw_offset: -1.7 # degree -1.3
+pitch_offset: -0.3 # degree -0.4
+comming_angle: 55 # degree
+leaving_angle: 40 # degree
+decision_speed: 8 # rad/s
+high_speed_delay_time: 0.030 # s
+low_speed_delay_time: 0.065 # s
+
+#####-----shooter参数-----#####
+auto_fire: true                  # 是否启用自动开火
+tracking_only_fire: true         # 是否只允许在 tracking 状态开火
+
+# 命令平滑容差（degree）
+first_tolerance: 2.5             # 近距离容差
+second_tolerance: 1.5            # 远距离容差
+judge_distance: 2.0              # 距离阈值（m）
+
+# 正面开火窗口（degree）
+normal_fire_window_deg: 90.0     # 普通转速时允许的开火窗口
+high_speed_fire_window_deg: 60.0  # 高速旋转时收紧后的窗口
+
+# 超过该角速度后，使用高速开火窗口（rad/s）
+spin_threshold_rad: 6
+
+camera_name: "hikrobot"
+exposure_ms: 5
+gain: 16.0
+vid_pid: "2bdf:0001"
+# camera_name: "mindvision"
+# exposure_ms: 10
+# gamma: 0.5
+# vid_pid: "f622:d13a"
+
+# -1  0  0
+#  0 -1  0
+#  0  0  1
+R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+
+# demo.yaml
+camera_matrix: [1759.68866, 0, 733.10365, 0, 1744.21692, 545.62975, 0, 0, 1]
+distort_coeffs: [-0.101461, 0.183015, -0.001380, 0.000832, 0]
+
+# 相机同理想情况的偏角: yaw0.46 pitch0.61 roll-1.53 degree
+R_camera2gimbal: [0.046979471252107552, 0.026185949083340154, 0.99855256514190438, -0.99839338100234343, 0.032934486725536338, 0.04610831112538416, -0.031679426313968251, -0.99911441569758686, 0.02769112301239629]
+t_camera2gimbal: [0.12202421591948234, -0.04871259428558148, 0.031940404394847052]
+
+#####-----cboard参数-----#####
+quaternion_canid: 0x100
+bullet_speed_canid: 0x101
+send_canid: 0xff
+can_interface: "can0"
+
+#####-----gimbal参数-----#####
+#com_port: "/dev/ttyACM0"
+com_port: "/dev/pts/6"
+#####-----planner-----#####
+fire_thresh: 0.0005
+
+max_yaw_acc: 50
+Q_yaw: [9e6, 0]
+R_yaw: [1]
+
+max_pitch_acc: 100
+Q_pitch: [9e6,0]
+R_pitch: [1]
+
+#####-----buff_detector参数-----#####
+detect:
+  contrast: 1
+  brightness: 
+    blue: -120
+    red: -100
+  brightness_threshold:
+    blue: 120
+    red: 40
+  morphology_size:
+    blue: 3
+    red: 3
+  dilate_size: 2
+  # canny_low_threshold: 100
+  # canny_high_threshold: 180
+  # approx_epsilon: 1.0
+  R_contours_min_area: 200
+  R_contours_max_area: 600
+  fanblades_head_contours_min_area: 3000
+  fanblades_head_contours_max_area: 8000
+  fanblades_body_contours_min_area: 1000
+  fanblades_body_contours_max_area: 4000
+  standard_fanblade_path: ./assets/standard_fanblade.jpg
+
+model: "assets/best.xml"
+#model: "assets/yolo11_buff_int8.xml"
+
+#####-----buff_aimer参数-----#####
+aim_time: 0.150         # s
+wait_time: 0.300        # s
+command_fire_gap: 0.080 # s
+predict_time: 0.150     # s
+
+use_windows: false   # 或 false
+
+#####-----decider参数-----#####
+image_width: 1440
+image_height: 1080
+fov_h: 61.6
+fov_v: 43.4
+new_fov_h: 60.0
+new_fov_v: 40.0
+mode: 1
+
