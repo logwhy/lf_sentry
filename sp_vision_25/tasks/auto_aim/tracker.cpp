@@ -280,20 +280,8 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   // 2. 预测 target 当前所有可能装甲板位置
   const auto pred_xyza_list = target_.armor_xyza_list();
 
-  constexpr double SWITCH_MARGIN = 0.25;   // 只有明显更优才允许切换
-  constexpr double MAX_ACCEPT_COST = 1.20; // 过大的匹配直接拒绝更新
-
   double best_cost = 1e9;
   Armor * best_armor = nullptr;
-
-  // 用来判断“是否值得切换”
-  double same_id_best_cost = 1e9;
-  Armor * same_id_best_armor = nullptr;
-
-  double other_best_cost = 1e9;
-  Armor * other_best_armor = nullptr;
-
-  const double angular_speed = std::abs(target_.ekf_x()[7]);
 
   // 3. 对每个候选观测进行打分
   for (auto & armor_ref : candidates) {
@@ -315,125 +303,35 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       Eigen::Vector3d pred_ypd = tools::xyz2ypd(pred_xyz);
       double pred_yaw = pred_xyza[3];
 
-      // 代价函数：距离 + yaw差 + 视角差
+      // 代价函数：距离 + yaw差 + ypd yaw差
       double cost_dist = std::abs(obs_ypd[2] - pred_ypd[2]);
       double cost_yaw = std::abs(tools::limit_rad(obs_yaw - pred_yaw));
       double cost_view = std::abs(tools::limit_rad(obs_ypd[0] - pred_ypd[0]));
 
-      // 动态切换惩罚：低速时锁紧，高速时放松
-      double switch_penalty = 0.0;
+      double cost = 2.0 * cost_dist + 1.5 * cost_yaw + 1.0 * cost_view;
+
+      // 加切换惩罚：防止左右横跳
       if (i != target_.last_id) {
-        if (angular_speed < 0.8) {
-          switch_penalty = 0.8;
-        } else if (angular_speed < 1.5) {
-          switch_penalty = 0.35;
-        } else {
-          switch_penalty = 0.12;
-        }
-      }
-
-      double cost = 2.0 * cost_dist + 1.5 * cost_yaw + 1.0 * cost_view + switch_penalty;
-
-      // 每个 pred_id 的 cost
-      static int tracker_cost_log_cnt = 0;
-      if (tracker_cost_log_cnt++ % 20 == 0) {
-        tools::logger()->info(
-          "[TrackerCost] cand={} pred_id={} last_id={} dist={:.3f} yaw={:.3f} view={:.3f} sw={:.3f} total={:.3f}",
-          static_cast<int>(armor.name),
-          i,
-          target_.last_id,
-          cost_dist,
-          cost_yaw,
-          cost_view,
-          switch_penalty,
-          cost);
+        cost += 0.35;
       }
 
       if (cost < min_cost_this_armor) {
         min_cost_this_armor = cost;
-        best_pred_id_this_armor = i;
       }
-    }
-
-    // 这个候选 armor 在所有 pred_id 中的最佳匹配结果
-    static int tracker_min_log_cnt = 0;
-    if (tracker_min_log_cnt++ % 20 == 0) {
-      tools::logger()->info(
-        "[TrackerCost] cand={} best_pred_id={} min_cost={:.3f}",
-        static_cast<int>(armor.name),
-        best_pred_id_this_armor,
-        min_cost_this_armor);
     }
 
     if (min_cost_this_armor < best_cost) {
       best_cost = min_cost_this_armor;
       best_armor = &armor;
     }
-
-    // 统计“沿用 last_id”和“切到其他 id”的最佳候选
-    if (best_pred_id_this_armor == target_.last_id) {
-      if (min_cost_this_armor < same_id_best_cost) {
-        same_id_best_cost = min_cost_this_armor;
-        same_id_best_armor = &armor;
-      }
-    } else {
-      if (min_cost_this_armor < other_best_cost) {
-        other_best_cost = min_cost_this_armor;
-        other_best_armor = &armor;
-      }
-    }
   }
 
   if (best_armor == nullptr) return false;
 
-  // 4. 选择最终用于更新的候选
-  Armor * selected_armor = best_armor;
-
-  // 如果 same / other 都存在，则只有 other 明显更优才切换
-  if (same_id_best_armor != nullptr && other_best_armor != nullptr) {
-    if (other_best_cost + SWITCH_MARGIN < same_id_best_cost) {
-      selected_armor = other_best_armor;
-      best_cost = other_best_cost;
-    } else {
-      selected_armor = same_id_best_armor;
-      best_cost = same_id_best_cost;
-    }
-  } else if (same_id_best_armor != nullptr) {
-    selected_armor = same_id_best_armor;
-    best_cost = same_id_best_cost;
-  } else if (other_best_armor != nullptr) {
-    selected_armor = other_best_armor;
-    best_cost = other_best_cost;
-  }
-
-  static int tracker_best_log_cnt = 0;
-  if (tracker_best_log_cnt++ % 10 == 0) {
-    tools::logger()->warn(
-      "[TrackerDecision] last_id={} same_cost={:.3f} other_cost={:.3f} diff(other-same)={:.3f} selected_center=({:.1f},{:.1f}) final_best={:.3f}",
-      target_.last_id,
-      same_id_best_cost,
-      other_best_cost,
-      other_best_cost - same_id_best_cost,
-      selected_armor->center.x,
-      selected_armor->center.y,
-      best_cost);
-  }
-
-  // 5. 如果最佳匹配代价太大，宁可本帧不更新，也不要把 target 带崩
-  if (best_cost > MAX_ACCEPT_COST) {
-    static int tracker_reject_log_cnt = 0;
-    if (tracker_reject_log_cnt++ % 10 == 0) {
-      tools::logger()->warn(
-        "[TrackerDecision] reject update, best_cost={:.3f} > {:.3f}",
-        best_cost,
-        MAX_ACCEPT_COST);
-    }
-    return false;
-  }
-
-  // 6. 一帧只用一个观测更新 target
-  target_.update(*selected_armor);
+  // 4. 一帧只用一个观测更新 target
+  target_.update(*best_armor);
 
   return true;
 }
+
 }  // namespace auto_aim
