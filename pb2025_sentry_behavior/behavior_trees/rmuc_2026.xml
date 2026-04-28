@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root BTCPP_format="4">
+
   <BehaviorTree ID="check_game_start">
     <Fallback>
       <IsGameStatus name="IsGameStart"
@@ -7,6 +8,7 @@
                     min_remain_time="0"
                     expected_game_progress="4"
                     key_port="{@referee_gameStatus}"/>
+
       <ForceFailure>
         <Sequence>
           <PublishSpinSpeed spin_speed="0.0"
@@ -39,8 +41,7 @@
                             topic_name="sentry_cmd"/>
             </Sequence>
 
-
-            <!-- 2. 已经在补给区 + 弹丸 < 50：兑换 150 发 -->
+            <!-- 2. 已经在补给区 + 弹丸少于 50：兑换 150 发 -->
             <Sequence>
               <IsRfidDetected friendly_supply_zone_exchange="true"
                               friendly_supply_zone_non_exchange="true"
@@ -63,8 +64,7 @@
                                 topic_name="cmd_spin"/>
             </Sequence>
 
-
-            <!-- 3. 已经在补给区 + HP < 150：原地等待规则自动回血，不兑换弹丸、不请求回血、不切姿态 -->
+            <!-- 3. 已经在补给区 + HP 小于 150：原地等待规则自动回血，不兑换弹丸、不请求回血、不切姿态 -->
             <Sequence>
               <IsRfidDetected friendly_supply_zone_exchange="true"
                               friendly_supply_zone_non_exchange="true"
@@ -84,8 +84,7 @@
                                 topic_name="cmd_spin"/>
             </Sequence>
 
-
-            <!-- 4. HP <= 120 且不在补给区：最高优先级，直接切移动姿态回补给区 -->
+            <!-- 4. HP 小于等于 120 且不在补给区：最高优先级，直接切移动姿态回补给区 -->
             <Sequence>
               <Inverter>
                 <IsStatusOK hp_min="121"
@@ -111,11 +110,10 @@
 
               <!-- 补给区点位：改补给区目标点就改这里 -->
               <PubNav2Goal goal="0.0;0.0;0.0"
-                          topic_name="goal_pose"/>
+                           topic_name="goal_pose"/>
             </Sequence>
 
-
-            <!-- 5. 弹丸 < 50 且不在补给区：回补给区补弹，但不额外切姿态 -->
+            <!-- 5. 弹丸少于 50 且不在补给区：回补给区补弹，但不额外切姿态 -->
             <Sequence>
               <Inverter>
                 <IsStatusOK hp_min="0"
@@ -138,30 +136,28 @@
 
               <!-- 补给区点位：改补弹目标点就改这里 -->
               <PubNav2Goal goal="0.0;0.0;0.0"
-                          topic_name="goal_pose"/>
+                           topic_name="goal_pose"/>
             </Sequence>
-
 
             <!-- 6. 3 秒内扣血大于 40：高速小陀螺 10 秒，不切姿态 -->
             <Sequence>
               <IsHpDecreased window_s="3.0"
-                            drop_threshold="40"
-                            hold_s="10.0"
-                            key_port="{@referee_robotStatus}"/>
+                             drop_threshold="40"
+                             hold_s="10.0"
+                             key_port="{@referee_robotStatus}"/>
 
               <PublishSpinSpeed spin_speed="14.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
             </Sequence>
 
-
             <!-- 7. 当前看到敌人：只切进攻姿态 + 高速小陀螺，不负责发导航点 -->
             <Sequence>
               <IsAttackState mode="enemy_visible"
-                            topic_name="cmd_gimbal"
-                            detect_timeout_ms="500"
-                            no_enemy_timeout_s="60.0"
-                            min_attack_duration_s="180.0"/>
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
 
               <SetSentryCmd posture_command="1"
                             topic_name="sentry_cmd"/>
@@ -171,14 +167,13 @@
                                 topic_name="cmd_spin"/>
             </Sequence>
 
-
-            <!-- 8. 处于进攻保持窗口：继续保持进攻姿态，但小陀螺恢复 7rad/s -->
+            <!-- 8. 处于进攻保持窗口：继续保持进攻姿态，但小陀螺恢复 7 rad/s -->
             <Sequence>
               <IsAttackState mode="keep_attack"
-                            topic_name="cmd_gimbal"
-                            detect_timeout_ms="500"
-                            no_enemy_timeout_s="60.0"
-                            min_attack_duration_s="180.0"/>
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
 
               <SetSentryCmd posture_command="1"
                             topic_name="sentry_cmd"/>
@@ -188,14 +183,60 @@
                                 topic_name="cmd_spin"/>
             </Sequence>
 
+                        <!-- 8.5 进攻状态下尝试追击；失败则回退到后续常态点 -->
+            <Sequence>
+              <ReactiveFallback>
+                <IsAttackState mode="enemy_visible"
+                               topic_name="cmd_gimbal"
+                               detect_timeout_ms="500"
+                               no_enemy_timeout_s="60.0"
+                               min_attack_duration_s="180.0"/>
 
-            <!-- 9. 1 分钟没敌人 + 进攻超过 3 分钟 + HP > 200：切防御姿态 -->
+                <IsAttackState mode="keep_attack"
+                               topic_name="cmd_gimbal"
+                               detect_timeout_ms="500"
+                               no_enemy_timeout_s="60.0"
+                               min_attack_duration_s="180.0"/>
+              </ReactiveFallback>
+
+              <SetSentryCmd posture_command="1"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+
+              <CalculateChaseGoal
+                topic_name="/target_xyz_camera"
+                source_frame="front_industrial_camera_optical_frame"
+                world_frame="odom"
+                robot_base_frame="chassis"
+                target_timeout="0.35"
+                chase_distance="1.5"
+                stop_tolerance="0.15"
+                z_min="0.8"
+                z_max="6.0"
+                x_abs_max="2.5"
+                y_abs_max="1.5"
+                goal_x_min="1.0"
+                goal_x_max="7.0"
+                goal_y_min="-4.2"
+                goal_y_max="-0.8"
+                transform_tolerance="0.2"
+                goal="{chase_goal}"/>
+
+              <PubNav2Goal goal_pose="{chase_goal}"
+                           frame_id="odom"
+                           topic_name="goal_pose"/>
+            </Sequence>
+
+            <!-- 9. 1 分钟没敌人 + 进攻超过 3 分钟 + HP 大于 200：切防御姿态 -->
             <Sequence>
               <IsAttackState mode="can_leave"
-                            topic_name="cmd_gimbal"
-                            detect_timeout_ms="500"
-                            no_enemy_timeout_s="60.0"
-                            min_attack_duration_s="180.0"/>
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
 
               <IsStatusOK hp_min="201"
                           heat_max="999"
@@ -210,14 +251,13 @@
                                 topic_name="cmd_spin"/>
             </Sequence>
 
-
-            <!-- 10. 1 分钟没敌人 + 进攻超过 3 分钟 + HP < 200：切移动姿态，回补给区 -->
+            <!-- 10. 1 分钟没敌人 + 进攻超过 3 分钟 + HP 小于 200：切移动姿态，回补给区 -->
             <Sequence>
               <IsAttackState mode="can_leave"
-                            topic_name="cmd_gimbal"
-                            detect_timeout_ms="500"
-                            no_enemy_timeout_s="60.0"
-                            min_attack_duration_s="180.0"/>
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
 
               <Inverter>
                 <IsStatusOK hp_min="200"
@@ -235,11 +275,10 @@
 
               <!-- 补给区点位：改撤退目标点就改这里 -->
               <PubNav2Goal goal="0.0;0.0;0.0"
-                          topic_name="goal_pose"/>
+                           topic_name="goal_pose"/>
             </Sequence>
 
-
-            <!-- 11. 比赛开始 + 状态良好：常态去巡逻/进攻待机点，小陀螺 7rad/s -->
+            <!-- 11. 比赛开始 + 状态良好：常态去巡逻/进攻待机点，小陀螺 7 rad/s -->
             <Sequence>
               <IsStatusOK hp_min="121"
                           heat_max="350"
@@ -252,9 +291,8 @@
 
               <!-- 常态巡逻/进攻待机点：改这里，不再依赖发现敌人 -->
               <PubNav2Goal goal="4.65;-3.5;0"
-                          topic_name="goal_pose"/>
+                           topic_name="goal_pose"/>
             </Sequence>
-
 
             <!-- 12. 兜底：只保持普通小陀螺，不发姿态、不发导航 -->
             <Sequence>
@@ -270,104 +308,86 @@
   </BehaviorTree>
 
   <TreeNodesModel>
+
     <Condition ID="IsGameStatus">
-      <input_port name="max_remain_time" default="420" type="int">Maximum remaining time (s)</input_port>
-      <input_port name="min_remain_time" default="0" type="int">Minimum remaining time (s)</input_port>
+      <input_port name="max_remain_time" default="420" type="int">Maximum remaining time in seconds</input_port>
+      <input_port name="min_remain_time" default="0" type="int">Minimum remaining time in seconds</input_port>
       <input_port name="expected_game_progress" default="4" type="int">Expected game progress stage</input_port>
-      <input_port name="key_port" default="{@referee_gameStatus}" type="pb_rm_interfaces::msg::GameStatus_&lt;std::allocator&lt;void&gt; &gt;">GameStatus port on blackboard</input_port>
-    </Condition>
-    
-    <Condition ID="IsRfidDetected">
-      <input_port name="friendly_supply_zone_exchange" default="false" type="bool">己方與兌換區重疊的補給區</input_port>
-      <input_port name="friendly_supply_zone_non_exchange" default="false" type="bool">己方與兌換區不重疊的補給區 / RMUL 補給區</input_port>
-      <input_port name="center_gain_point" default="false" type="bool">中心增益點（僅 RMUL 適用）</input_port>
-      <input_port name="friendly_fortress_gain_point" default="false" type="bool">己方堡壘增益點</input_port>
-      <input_port name="key_port" default="{@referee_rfidStatus}" type="pb_rm_interfaces::msg::RfidStatus_&lt;std::allocator&lt;void&gt; &gt;">RfidStatus port on blackboard</input_port>
-    </Condition>
-    
-    <Condition ID="IsStatusOK">
-      <input_port name="ammo_min" default="0" type="int">Lower then minimum ammo will return FAILURE</input_port>
-      <input_port name="heat_max" default="350" type="int">Maximum heat. NOTE: Sentry heat limit is 400</input_port>
-      <input_port name="hp_min" default="300" type="int">Minimum HP. NOTE: Sentry init/max HP is 400</input_port>
-      <input_port name="key_port" default="{@referee_robotStatus}" type="pb_rm_interfaces::msg::RobotStatus_&lt;std::allocator&lt;void&gt; &gt;">RobotStatus port on blackboard</input_port>
-    </Condition>
-    
-    <Condition ID="IsDead"/>
-    <Condition ID="CanFreeRespawn"/>
-    <Condition ID="IsHpLessThan">
-      <input_port name="threshold" type="double">血量比例閾值 (0.0~1.0)</input_port>
+      <input_port name="key_port" default="{@referee_gameStatus}">GameStatus port on blackboard</input_port>
     </Condition>
 
-	<Action ID="PubNav2Goal">
-	  <input_port name="goal" default="0;0;0" type="geometry_msgs::msg::PoseStamped_<std::allocator<void> >">
-	    Expected goal pose that send to nav2. Fill with format `x;y;yaw`
-	  </input_port>
-	  <input_port name="topic_name" default="__default__placeholder__" type="std::string">
-	    Topic name
-	  </input_port>
-	</Action>
-    
-    <Action ID="PublishSpinSpeed">
-      <input_port name="spin_speed" default="0.000000" type="double">Angular Z velocity (rad/s)</input_port>
-      <input_port name="duration" type="std::chrono::milliseconds">Publish then sleep duration in milliseconds</input_port>
-      <input_port name="topic_name" default="__default__placeholder__" type="std::string">Topic name</input_port>
+    <Condition ID="IsRfidDetected">
+      <input_port name="friendly_supply_zone_exchange" default="false" type="bool">Friendly supply zone exchange</input_port>
+      <input_port name="friendly_supply_zone_non_exchange" default="false" type="bool">Friendly supply zone non exchange</input_port>
+      <input_port name="center_gain_point" default="false" type="bool">Center gain point</input_port>
+      <input_port name="friendly_fortress_gain_point" default="false" type="bool">Friendly fortress gain point</input_port>
+      <input_port name="key_port" default="{@referee_rfidStatus}">RfidStatus port on blackboard</input_port>
+    </Condition>
+
+    <Condition ID="IsStatusOK">
+      <input_port name="ammo_min" default="0" type="int">Minimum projectile allowance</input_port>
+      <input_port name="heat_max" default="350" type="int">Maximum shooter heat</input_port>
+      <input_port name="hp_min" default="300" type="int">Minimum HP</input_port>
+      <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+    </Condition>
+
+    <Condition ID="IsDead">
+      <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+    </Condition>
+
+    <Condition ID="CanFreeRespawn">
+      <input_port name="key_port" default="{@referee_sentryInfo}">SentryInfo port on blackboard</input_port>
+    </Condition>
+
+    <Condition ID="IsHpLessThan">
+      <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+      <input_port name="threshold" type="double">HP ratio threshold</input_port>
+    </Condition>
+
+    <Condition ID="IsHpDecreased">
+      <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+      <input_port name="window_s" default="3.0" type="double">HP drop detect window</input_port>
+      <input_port name="drop_threshold" default="40" type="int">HP drop threshold</input_port>
+      <input_port name="hold_s" default="10.0" type="double">Hold success duration</input_port>
+    </Condition>
+
+    <Condition ID="IsAttackState">
+      <input_port name="mode" default="keep_attack" type="std::string">enemy_visible / keep_attack / can_leave</input_port>
+      <input_port name="topic_name" default="cmd_gimbal" type="std::string">Gimbal command topic</input_port>
+      <input_port name="detect_timeout_ms" default="500" type="int">Enemy detection timeout</input_port>
+      <input_port name="no_enemy_timeout_s" default="60.0" type="double">No enemy timeout</input_port>
+      <input_port name="min_attack_duration_s" default="180.0" type="double">Minimum attack duration</input_port>
+    </Condition>
+
+    <Action ID="PubNav2Goal">
+      <input_port name="goal" default="0;0;0" type="std::string">Goal in x;y;yaw format</input_port>
+      <input_port name="topic_name" default="goal_pose" type="std::string">Topic name</input_port>
     </Action>
-    
+
+    <Action ID="PublishSpinSpeed">
+      <input_port name="spin_speed" default="0.0" type="double">Angular Z velocity</input_port>
+      <input_port name="duration" default="0.0">Publish duration</input_port>
+      <input_port name="topic_name" default="cmd_spin" type="std::string">Topic name</input_port>
+    </Action>
+
     <Action ID="PublishTwist">
-      <input_port name="v_y" default="0.000000" type="double">Linear Y velocity (m/s)</input_port>
-      <input_port name="v_yaw" default="0.000000" type="double">Angular Z velocity (rad/s)</input_port>
-      <input_port name="v_x" default="0.000000" type="double">Linear X velocity (m/s)</input_port>
-      <input_port name="duration" type="std::chrono::milliseconds">Publish then sleep duration in milliseconds</input_port>
-      <input_port name="topic_name" default="__default__placeholder__" type="std::string">Topic name</input_port>
+      <input_port name="v_y" default="0.0" type="double">Linear Y velocity</input_port>
+      <input_port name="v_yaw" default="0.0" type="double">Angular Z velocity</input_port>
+      <input_port name="v_x" default="0.0" type="double">Linear X velocity</input_port>
+      <input_port name="duration" default="0.0">Publish duration</input_port>
+      <input_port name="topic_name" default="cmd_vel" type="std::string">Topic name</input_port>
     </Action>
 
     <Action ID="SetSentryCmd">
-      <input_port name="confirm_respawn" default="false" type="bool">確認免費復活</input_port>
-      <input_port name="confirm_pay_respawn" default="false" type="bool">確認付費復活</input_port>
-      <input_port name="projectile_allowance_to_exchange" default="0" type="int">兌換發彈量</input_port>
-      <input_port name="remote_projectile_request_count" default="0" type="int">遠程兌換發彈量請求次數</input_port>
-      <input_port name="remote_hp_request_count" default="0" type="int">遠程兌換血量請求次數</input_port>
-      <input_port name="posture_command" default="0" type="int">切換姿態 (1進攻, 2防禦, 3移動)</input_port>
-      <input_port name="activate_rune" default="false" type="bool">激活能量機關</input_port>
+      <input_port name="confirm_respawn" default="false" type="bool">Confirm free respawn</input_port>
+      <input_port name="confirm_pay_respawn" default="false" type="bool">Confirm paid respawn</input_port>
+      <input_port name="projectile_allowance_to_exchange" default="0" type="int">Projectile allowance to exchange</input_port>
+      <input_port name="remote_projectile_request_count" default="0" type="int">Remote projectile exchange request count</input_port>
+      <input_port name="remote_hp_request_count" default="0" type="int">Remote HP exchange request count</input_port>
+      <input_port name="posture_command" default="0" type="int">Posture command: 1 attack, 2 defense, 3 move, 0 unchanged</input_port>
+      <input_port name="activate_rune" default="false" type="bool">Activate rune</input_port>
+      <input_port name="topic_name" default="sentry_cmd" type="std::string">Topic name</input_port>
     </Action>
-    
-      <Condition ID="IsDead">
-    <input_port
-      name="key_port"
-      default="{@referee_robotStatus}">
-      RobotStatus port on blackboard
-    </input_port>
-  </Condition>
-
-  <Condition ID="CanFreeRespawn">
-    <input_port
-      name="key_port"
-      default="{@referee_sentryInfo}">
-      SentryInfo port on blackboard
-    </input_port>
-  </Condition>
-
-  <Condition ID="IsHpLessThan">
-    <input_port
-      name="key_port"
-      default="{@referee_robotStatus}">
-      RobotStatus port on blackboard
-    </input_port>
-    <input_port
-      name="threshold">
-      HP ratio threshold (0.0~1.0)
-    </input_port>
-  </Condition>
-
-  <Action ID="SetSentryCmd">
-    <input_port name="confirm_respawn"/>
-    <input_port name="confirm_pay_respawn"/>
-    <input_port name="projectile_allowance_to_exchange"/>
-    <input_port name="remote_projectile_request_count"/>
-    <input_port name="remote_hp_request_count"/>
-    <input_port name="posture_command"/>
-    <input_port name="activate_rune"/>
-  </Action>
 
   </TreeNodesModel>
 
