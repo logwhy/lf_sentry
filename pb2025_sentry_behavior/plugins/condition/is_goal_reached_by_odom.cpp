@@ -75,3 +75,5 @@ BT::PortsList IsGoalReachedByOdom::providedPorts()
 
 #include "behaviortree_ros2/plugins.hpp"
 CreateRosNodePlugin(pb2025_sentry_behavior::IsGoalReachedByOdom, "IsGoalReachedByOdom");
+
+//话题/red_standard_robot1/navigate_to_pose/_action/status也可以检验到点，status=4就行

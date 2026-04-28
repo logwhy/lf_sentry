@@ -6,8 +6,38 @@
             <output_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;" default="{attack_pose}">Expected goal pose that send to nav2. Fill with format `x;y;yaw`</output_port>
             <input_port name="topic_name" type="std::string" default="__default__placeholder__">Topic name</input_port>
         </Condition>
+        <Action ID="CalculateChaseGoal">
+            <input_port name="goal_y_max" type="double" default="100.000000">Goal max y</input_port>
+            <input_port name="goal_x_max" type="double" default="100.000000">Goal max x</input_port>
+            <input_port name="goal_x_min" type="double" default="-100.000000">Goal min x</input_port>
+            <input_port name="world_y_max" type="double" default="100.000000">World max y for target</input_port>
+            <input_port name="world_y_min" type="double" default="-100.000000">World min y for target</input_port>
+            <output_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;" default="{chase_goal}">Chase goal</output_port>
+            <input_port name="topic_name" type="std::string" default="/target_xyz_camera">Vision target topic</input_port>
+            <input_port name="source_frame" type="std::string" default="front_industrial_camera_optical_frame">Real source frame used for target point</input_port>
+            <input_port name="z_max" type="double" default="6.000000">Maximum valid target depth</input_port>
+            <input_port name="world_frame" type="std::string" default="odom">World frame</input_port>
+            <input_port name="robot_base_frame" type="std::string" default="chassis">Robot base frame</input_port>
+            <input_port name="target_timeout" type="double" default="0.350000">Target timeout in seconds</input_port>
+            <input_port name="chase_distance" type="double" default="1.500000">Desired stop distance to target</input_port>
+            <input_port name="stop_tolerance" type="double" default="0.150000">Tolerance around chase distance</input_port>
+            <input_port name="z_min" type="double" default="0.800000">Minimum valid target depth</input_port>
+            <input_port name="x_abs_max" type="double" default="2.500000">Maximum abs x in camera frame</input_port>
+            <input_port name="y_abs_max" type="double" default="1.500000">Maximum abs y in camera frame</input_port>
+            <input_port name="world_x_max" type="double" default="100.000000">World max x for target</input_port>
+            <input_port name="transform_tolerance" type="double" default="0.200000">TF timeout</input_port>
+            <input_port name="goal_y_min" type="double" default="-100.000000">Goal min y</input_port>
+            <input_port name="world_x_min" type="double" default="-100.000000">World min x for target</input_port>
+        </Action>
         <Condition ID="CanFreeRespawn">
             <input_port name="key_port" type="pb_rm_interfaces::msg::SentryInfo_&lt;std::allocator&lt;void&gt; &gt;" default="{@referee_sentryInfo}">SentryInfo port on blackboard</input_port>
+        </Condition>
+        <Condition ID="IsAttackState">
+            <input_port name="min_attack_duration_s" type="double" default="180.000000">Minimum attack duration before leaving attack</input_port>
+            <input_port name="no_enemy_timeout_s" type="double" default="60.000000">No enemy duration before leaving attack</input_port>
+            <input_port name="detect_timeout_ms" type="int" default="500">Enemy visible timeout in milliseconds</input_port>
+            <input_port name="topic_name" type="std::string" default="cmd_gimbal">Topic name of gimbal command</input_port>
+            <input_port name="mode" type="std::string" default="keep_attack">keep_attack / can_leave / enemy_visible</input_port>
         </Condition>
         <Condition ID="IsAttacked">
             <output_port name="gimbal_yaw" type="float" default="{gimbal_yaw}">Move gimbal_yaw to the direction of the hit armor plate</output_port>
@@ -33,6 +63,9 @@
             <input_port name="topic_name" type="std::string" default="__default__placeholder__">Topic name</input_port>
         </Condition>
         <Condition ID="IsHpDecreased">
+            <input_port name="hold_s" type="double" default="10.000000">Keep SUCCESS after triggered, in seconds</input_port>
+            <input_port name="drop_threshold" type="int" default="40">Trigger if HP drop in window is greater than this value</input_port>
+            <input_port name="window_s" type="double" default="3.000000">Time window for HP drop detection, in seconds</input_port>
             <input_port name="key_port" type="pb_rm_interfaces::msg::RobotStatus_&lt;std::allocator&lt;void&gt; &gt;" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
         </Condition>
         <Condition ID="IsHpLessThan">

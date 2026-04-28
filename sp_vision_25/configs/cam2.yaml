@@ -3,17 +3,16 @@ device: "NPU"
 
 #####-----后摄硬件与基础参数-----#####
 camera_name: "hikrobot"
-serial_number: "00DA5751514"
+serial_number: "DB0151353"
 vid_pid: "2bdf:0001"
 exposure_ms: 5
-gain: 12
-image_width: 1440
-image_height: 1080
-fps: 40
+gain: 15.0
+image_width: 1280
+image_height: 1024
 
 #####-----后摄标定参数-----#####
-camera_matrix: [1810.18913, 0.0, 729.08455, 0.0, 1811.24101, 546.01958, 0.0, 0.0, 1.0]
-distort_coeffs: [-0.054302, -0.016375, 0.000738, -0.000240, 0.0]
+camera_matrix: [727.623158, 0.0, 648.885623, 0.0, 727.51578, 486.448228, 0.0, 0.0, 1.0]
+distort_coeffs: [0.054638, -0.067165, 0.000760, 0.003007, 0.0]
 R_camera2gimbal: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 t_camera2gimbal: [0.0, 0.0, 0.0]
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]

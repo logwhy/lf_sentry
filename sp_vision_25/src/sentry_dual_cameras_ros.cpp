@@ -40,7 +40,7 @@ int main(int argc, char * argv[])
   auto config_path = cli.get<std::string>(0);
   auto gimbal = std::make_shared<io::GimbalROS>();
   gimbal->start_spin(); 
-  io::SNCamera camera("configs/cam1.yaml");
+  io::SNCamera camera("configs/demo.yaml");
   std::this_thread::sleep_for(std::chrono::seconds(2));
   io::SNCamera back_camera("configs/cam2.yaml");
 

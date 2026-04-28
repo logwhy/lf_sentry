@@ -26,39 +26,241 @@
     <KeepRunningUntilFailure>
       <ForceSuccess>
         <ReactiveSequence>
-          
+
           <SubTree ID="check_game_start"/>
-          
+
           <ReactiveFallback>
-            
+
+            <!-- 1. 死亡且可免费复活：只确认复活 -->
             <Sequence>
-              <IsDead/>
-              <CanFreeRespawn/>
-              <SetSentryCmd confirm_respawn="true"/>
+              <IsDead key_port="{@referee_robotStatus}"/>
+              <CanFreeRespawn key_port="{@referee_sentryInfo}"/>
+              <SetSentryCmd confirm_respawn="true"
+                            topic_name="sentry_cmd"/>
             </Sequence>
 
+
+            <!-- 2. 已经在补给区 + 弹丸 < 50：兑换 150 发 -->
             <Sequence>
-              <IsHpLessThan threshold="0.3"/>
-              
-              <SetSentryCmd posture_command="3"/> 
-              <PublishSpinSpeed spin_speed="0.0" duration="0.0" topic_name="cmd_spin"/>
-              <PubNav2Goal goal="0.0;0.0;0.0" topic_name="goal_pose"/>
+              <IsRfidDetected friendly_supply_zone_exchange="true"
+                              friendly_supply_zone_non_exchange="true"
+                              center_gain_point="false"
+                              friendly_fortress_gain_point="false"
+                              key_port="{@referee_rfidStatus}"/>
+
+              <Inverter>
+                <IsStatusOK hp_min="0"
+                            heat_max="999"
+                            ammo_min="50"
+                            key_port="{@referee_robotStatus}"/>
+              </Inverter>
+
+              <SetSentryCmd projectile_allowance_to_exchange="150"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
             </Sequence>
 
+
+            <!-- 3. 已经在补给区 + HP < 150：原地等待规则自动回血，不兑换弹丸、不请求回血、不切姿态 -->
             <Sequence>
-              <IsHpLessThan threshold="0.5"/>
-              
-              <SetSentryCmd posture_command="2"/> 
-              <PublishSpinSpeed spin_speed="15.0" duration="0.0" topic_name="cmd_spin"/>
+              <IsRfidDetected friendly_supply_zone_exchange="true"
+                              friendly_supply_zone_non_exchange="true"
+                              center_gain_point="false"
+                              friendly_fortress_gain_point="false"
+                              key_port="{@referee_rfidStatus}"/>
+
+              <Inverter>
+                <IsStatusOK hp_min="150"
+                            heat_max="999"
+                            ammo_min="0"
+                            key_port="{@referee_robotStatus}"/>
+              </Inverter>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
             </Sequence>
 
+
+            <!-- 4. HP <= 120 且不在补给区：最高优先级，直接切移动姿态回补给区 -->
             <Sequence>
-              <PubNav2Goal goal="4.65;-3.5;0" topic_name="goal_pose"/>
-              
-              <SetSentryCmd posture_command="1"/> 
-              
-              <PublishSpinSpeed spin_speed="7.0" duration="0.0" topic_name="cmd_spin"/>
-              
+              <Inverter>
+                <IsStatusOK hp_min="121"
+                            heat_max="999"
+                            ammo_min="0"
+                            key_port="{@referee_robotStatus}"/>
+              </Inverter>
+
+              <Inverter>
+                <IsRfidDetected friendly_supply_zone_exchange="true"
+                                friendly_supply_zone_non_exchange="true"
+                                center_gain_point="false"
+                                friendly_fortress_gain_point="false"
+                                key_port="{@referee_rfidStatus}"/>
+              </Inverter>
+
+              <SetSentryCmd posture_command="3"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+
+              <!-- 补给区点位：改补给区目标点就改这里 -->
+              <PubNav2Goal goal="0.0;0.0;0.0"
+                          topic_name="goal_pose"/>
+            </Sequence>
+
+
+            <!-- 5. 弹丸 < 50 且不在补给区：回补给区补弹，但不额外切姿态 -->
+            <Sequence>
+              <Inverter>
+                <IsStatusOK hp_min="0"
+                            heat_max="999"
+                            ammo_min="50"
+                            key_port="{@referee_robotStatus}"/>
+              </Inverter>
+
+              <Inverter>
+                <IsRfidDetected friendly_supply_zone_exchange="true"
+                                friendly_supply_zone_non_exchange="true"
+                                center_gain_point="false"
+                                friendly_fortress_gain_point="false"
+                                key_port="{@referee_rfidStatus}"/>
+              </Inverter>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+
+              <!-- 补给区点位：改补弹目标点就改这里 -->
+              <PubNav2Goal goal="0.0;0.0;0.0"
+                          topic_name="goal_pose"/>
+            </Sequence>
+
+
+            <!-- 6. 3 秒内扣血大于 40：高速小陀螺 10 秒，不切姿态 -->
+            <Sequence>
+              <IsHpDecreased window_s="3.0"
+                            drop_threshold="40"
+                            hold_s="10.0"
+                            key_port="{@referee_robotStatus}"/>
+
+              <PublishSpinSpeed spin_speed="14.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+            </Sequence>
+
+
+            <!-- 7. 当前看到敌人：只切进攻姿态 + 高速小陀螺，不负责发导航点 -->
+            <Sequence>
+              <IsAttackState mode="enemy_visible"
+                            topic_name="cmd_gimbal"
+                            detect_timeout_ms="500"
+                            no_enemy_timeout_s="60.0"
+                            min_attack_duration_s="180.0"/>
+
+              <SetSentryCmd posture_command="1"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="14.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+            </Sequence>
+
+
+            <!-- 8. 处于进攻保持窗口：继续保持进攻姿态，但小陀螺恢复 7rad/s -->
+            <Sequence>
+              <IsAttackState mode="keep_attack"
+                            topic_name="cmd_gimbal"
+                            detect_timeout_ms="500"
+                            no_enemy_timeout_s="60.0"
+                            min_attack_duration_s="180.0"/>
+
+              <SetSentryCmd posture_command="1"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+            </Sequence>
+
+
+            <!-- 9. 1 分钟没敌人 + 进攻超过 3 分钟 + HP > 200：切防御姿态 -->
+            <Sequence>
+              <IsAttackState mode="can_leave"
+                            topic_name="cmd_gimbal"
+                            detect_timeout_ms="500"
+                            no_enemy_timeout_s="60.0"
+                            min_attack_duration_s="180.0"/>
+
+              <IsStatusOK hp_min="201"
+                          heat_max="999"
+                          ammo_min="50"
+                          key_port="{@referee_robotStatus}"/>
+
+              <SetSentryCmd posture_command="2"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+            </Sequence>
+
+
+            <!-- 10. 1 分钟没敌人 + 进攻超过 3 分钟 + HP < 200：切移动姿态，回补给区 -->
+            <Sequence>
+              <IsAttackState mode="can_leave"
+                            topic_name="cmd_gimbal"
+                            detect_timeout_ms="500"
+                            no_enemy_timeout_s="60.0"
+                            min_attack_duration_s="180.0"/>
+
+              <Inverter>
+                <IsStatusOK hp_min="200"
+                            heat_max="999"
+                            ammo_min="0"
+                            key_port="{@referee_robotStatus}"/>
+              </Inverter>
+
+              <SetSentryCmd posture_command="3"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+
+              <!-- 补给区点位：改撤退目标点就改这里 -->
+              <PubNav2Goal goal="0.0;0.0;0.0"
+                          topic_name="goal_pose"/>
+            </Sequence>
+
+
+            <!-- 11. 比赛开始 + 状态良好：常态去巡逻/进攻待机点，小陀螺 7rad/s -->
+            <Sequence>
+              <IsStatusOK hp_min="121"
+                          heat_max="350"
+                          ammo_min="50"
+                          key_port="{@referee_robotStatus}"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+
+              <!-- 常态巡逻/进攻待机点：改这里，不再依赖发现敌人 -->
+              <PubNav2Goal goal="4.65;-3.5;0"
+                          topic_name="goal_pose"/>
+            </Sequence>
+
+
+            <!-- 12. 兜底：只保持普通小陀螺，不发姿态、不发导航 -->
+            <Sequence>
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
             </Sequence>
 
           </ReactiveFallback>

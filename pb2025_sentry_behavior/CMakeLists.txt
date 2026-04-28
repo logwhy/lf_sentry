@@ -68,6 +68,9 @@ list(APPEND plugin_libs is_goal_reached_by_odom)
 ament_auto_add_library(is_hp_decreased SHARED plugins/condition/is_hp_decreased.cpp)
 list(APPEND plugin_libs is_hp_decreased)
 
+ament_auto_add_library(is_attack_state SHARED plugins/condition/is_attack_state.cpp)
+list(APPEND plugin_libs is_attack_state)
+
 ####### Actions #######
 ament_auto_add_library(send_nav2_goal SHARED plugins/action/send_nav2_goal.cpp)
 list(APPEND plugin_libs send_nav2_goal)
@@ -92,6 +95,11 @@ list(APPEND plugin_libs calculate_attack_pose)
 
 ament_auto_add_library(set_sentry_cmd SHARED plugins/action/set_sentry_cmd.cpp)
 list(APPEND plugin_libs set_sentry_cmd)
+
+ament_auto_add_library(calculate_chase_goal SHARED
+  plugins/action/calculate_chase_goal.cpp
+)
+list(APPEND plugin_libs calculate_chase_goal)
 
 ####### Controls #######
 ament_auto_add_library(recovery_node SHARED plugins/control/recovery_node.cpp)

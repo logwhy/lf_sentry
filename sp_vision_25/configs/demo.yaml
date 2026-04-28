@@ -61,11 +61,12 @@ normal_fire_window_deg: 90.0     # 普通转速时允许的开火窗口
 high_speed_fire_window_deg: 60.0  # 高速旋转时收紧后的窗口
 
 # 超过该角速度后，使用高速开火窗口（rad/s）
-spin_threshold_rad: 6
+spin_threshold_rad: 6.0
 
 camera_name: "hikrobot"
 exposure_ms: 5
 gain: 16.0
+serial_number: "00DA5751516"
 vid_pid: "2bdf:0001"
 # camera_name: "mindvision"
 # exposure_ms: 10
@@ -141,11 +142,11 @@ predict_time: 0.150     # s
 use_windows: false   # 或 false
 
 #####-----decider参数-----#####
-image_width: 1440
-image_height: 1080
-fov_h: 61.6
-fov_v: 43.4
-new_fov_h: 60.0
-new_fov_v: 40.0
+image_width: 1280
+image_height: 1024
+fov_h: 86.0
+fov_v: 70.0
+new_fov_h: 85.0
+new_fov_v: 70.0
 mode: 1
 
