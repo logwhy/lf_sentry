@@ -781,10 +781,10 @@ void StandardRobotPpRos2Node::sendData()
       std::vector<uint8_t> send_data = toVector(send_robot_cmd_data_);
       serial_driver_->port()->send(send_data);
 
-      send_robot_cmd_data_.data.shoot.fire = 0;
-      send_robot_cmd_data_.data.speed_vector.vx = 0;
-      send_robot_cmd_data_.data.speed_vector.vy = 0;
-      send_robot_cmd_data_.data.speed_vector.wz = 0;
+      //send_robot_cmd_data_.data.shoot.fire = 0;
+      // send_robot_cmd_data_.data.speed_vector.vx = 0;
+      // send_robot_cmd_data_.data.speed_vector.vy = 0;
+      // send_robot_cmd_data_.data.speed_vector.wz = 0;
 
       // --- 新增：SentryCmd 发送逻辑 ---
       // 限制发送频率最高 30Hz。当前循环周期是 5ms (200Hz)。

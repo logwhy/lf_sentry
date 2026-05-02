@@ -41,23 +41,18 @@
                             topic_name="sentry_cmd"/>
             </Sequence>
 
-            <!-- 2. 已经在补给区 + 弹丸少于 50：兑换 150 发 -->
+            <!-- 2. 已经在补给区 + 弹丸少于 50：本次补给区访问只兑换一次；每次重新回补给区，兑弹量 +1 -->
             <Sequence>
-              <IsRfidDetected friendly_supply_zone_exchange="true"
-                              friendly_supply_zone_non_exchange="true"
-                              center_gain_point="false"
-                              friendly_fortress_gain_point="false"
-                              key_port="{@referee_rfidStatus}"/>
-
-              <Inverter>
-                <IsStatusOK hp_min="0"
-                            heat_max="999"
-                            ammo_min="50"
-                            key_port="{@referee_robotStatus}"/>
-              </Inverter>
-
-              <SetSentryCmd projectile_allowance_to_exchange="150"
-                            topic_name="sentry_cmd"/>
+              <ExchangeProjectileOnce
+                rfid_key_port="{@referee_rfidStatus}"
+                robot_status_key_port="{@referee_robotStatus}"
+                friendly_supply_zone_exchange="true"
+                friendly_supply_zone_non_exchange="true"
+                ammo_threshold="50"
+                base_exchange="150"
+                increment_step="1"
+                max_exchange="200"
+                topic_name="sentry_cmd"/>
 
               <PublishSpinSpeed spin_speed="7.0"
                                 duration="0.0"
@@ -135,7 +130,7 @@
                                 topic_name="cmd_spin"/>
 
               <!-- 补给区点位：改补弹目标点就改这里 -->
-              <PubNav2Goal goal="0.0;0.0;0.0"
+              <PubNav2Goal goal="-1.0;-7.0;0.0"
                            topic_name="goal_pose"/>
             </Sequence>
 
@@ -218,10 +213,10 @@
                 z_max="6.0"
                 x_abs_max="2.5"
                 y_abs_max="1.5"
-                goal_x_min="1.0"
-                goal_x_max="7.0"
-                goal_y_min="-4.2"
-                goal_y_max="-0.8"
+                goal_x_min="-2.0"
+                goal_x_max="5.0"
+                goal_y_min="-6.2"
+                goal_y_max="1.8"
                 transform_tolerance="0.2"
                 goal="{chase_goal}"/>
 
@@ -274,7 +269,7 @@
                                 topic_name="cmd_spin"/>
 
               <!-- 补给区点位：改撤退目标点就改这里 -->
-              <PubNav2Goal goal="0.0;0.0;0.0"
+              <PubNav2Goal goal="-1.0;-7.0;0.0"
                            topic_name="goal_pose"/>
             </Sequence>
 
@@ -290,7 +285,7 @@
                                 topic_name="cmd_spin"/>
 
               <!-- 常态巡逻/进攻待机点：改这里，不再依赖发现敌人 -->
-              <PubNav2Goal goal="4.65;-3.5;0"
+              <PubNav2Goal goal="3.65;-3.5;0"
                            topic_name="goal_pose"/>
             </Sequence>
 

@@ -1,292 +1,348 @@
 #include <fmt/core.h>
 
 #include <chrono>
-#include <fstream>
-#include <list>
 #include <memory>
-#include <string>
-#include <thread>
-
-#include <Eigen/Dense>
+#include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
-#include <rclcpp/rclcpp.hpp>
-#include <yaml-cpp/yaml.h>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
-#include "async_detect_worker.hpp"
-#include "io/command.hpp"
+#include "io/camera.hpp"
 #include "io/ros2/gimbal_ros.hpp"
+
 #include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/shooter.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
+#include "tasks/auto_aim/yolo.hpp"
 #include "tasks/omniperception/decider.hpp"
-#include "tools/debug_tool.hpp"
+
 #include "tools/exiter.hpp"
 #include "tools/math_tools.hpp"
-#include "tools/recorder.hpp"
 
+using namespace std::chrono;
 using namespace std::chrono_literals;
-using SteadyClock = std::chrono::steady_clock;
+
+// ==========================================
+// 相机抓取流 (Producer)
+// ==========================================
+struct FrameData {
+    cv::Mat img;
+    std::chrono::steady_clock::time_point timestamp;
+};
+
+class CameraStream {
+public:
+    CameraStream(io::SNCamera* cam) : camera_(cam), running_(true) {
+        thread_ = std::thread(&CameraStream::grab_loop, this);
+    }
+    ~CameraStream() {
+        running_ = false;
+        if (thread_.joinable()) thread_.join();
+    }
+    bool get_latest(cv::Mat& out_img, std::chrono::steady_clock::time_point& out_t) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (latest_frame_.img.empty()) return false;
+        latest_frame_.img.copyTo(out_img); 
+        out_t = latest_frame_.timestamp;
+        return true;
+    }
+private:
+    void grab_loop() {
+        while (running_) {
+            cv::Mat img;
+            auto t = std::chrono::steady_clock::now();
+            camera_->read(img, t); 
+            if (!img.empty()) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                latest_frame_.img = img;
+                latest_frame_.timestamp = t;
+            }
+        }
+    }
+    io::SNCamera* camera_;
+    std::atomic<bool> running_;
+    std::thread thread_;
+    std::mutex mutex_;
+    FrameData latest_frame_;
+};
+
+// ==========================================
+// 线程间共享数据与锁
+// ==========================================
+std::mutex cmd_mtx;
+
+bool front_locked = false;
+io::Command front_cmd{false, false, 0, 0};
+
+// ===== 新增：只缓存前摄当前画面给出的 xyz =====
+bool front_xyz_valid = false;
+Eigen::Vector3d front_xyz_camera = Eigen::Vector3d::Zero();
+Eigen::Vector3d front_xyz_gimbal = Eigen::Vector3d::Zero();
+
+bool back_has_target = false;
+io::Command back_cmd{false, false, 0, 0};
+
+std::atomic<bool> req_clear_front{false}; // 通知前摄线程清空缓存
+std::atomic<int> fps_counter{0};          // 仅前摄帧率
 
 const std::string keys =
-  "{help h usage ? |                   | 输出命令行参数说明}"
-  "{@config-path   | configs/demo.yaml | demo.yaml 配置文件路径}";
-
-static void overlay_if_exists(YAML::Node & dst, const YAML::Node & src, const std::string & key)
-{
-  if (src[key]) dst[key] = src[key];
-}
-
-static std::string read_config_path(
-  const YAML::Node & root,
-  const std::string & key,
-  const std::string & fallback)
-{
-  return root[key] ? root[key].as<std::string>() : fallback;
-}
-
-static YAML::Node build_runtime_config(
-  const std::string & demo_path,
-  const std::string & cam_path,
-  bool is_back_camera)
-{
-  YAML::Node demo = YAML::LoadFile(demo_path);
-  YAML::Node cam = YAML::LoadFile(cam_path);
-  YAML::Node merged = YAML::Clone(demo);
-
-  // 相机打开相关、标定相关从 cam1/cam2 继承；
-  // 模型、enemy_color、阈值、tracker/aimer/shooter 策略默认跟随 demo。
-  const char * overlay_keys[] = {
-    "camera_name", "serial_number", "vid_pid", "exposure_ms", "gain", "gamma",
-    "image_width", "image_height", "camera_matrix", "distort_coeffs",
-    "R_camera2gimbal", "t_camera2gimbal", "R_gimbal2imubody"};
-
-  for (const auto * k : overlay_keys) overlay_if_exists(merged, cam, k);
-
-  // device 优先级：
-  // 前摄：front_device > demo.device > cam.device > GPU
-  // 后摄：cam.device > back_device_default > demo.device > NPU
-  if (!is_back_camera) {
-    if (demo["front_device"]) merged["device"] = demo["front_device"];
-    else if (demo["device"]) merged["device"] = demo["device"];
-    else if (cam["device"]) merged["device"] = cam["device"];
-    else merged["device"] = "GPU";
-  } else {
-    if (cam["device"]) merged["device"] = cam["device"];
-    else if (demo["back_device_default"]) merged["device"] = demo["back_device_default"];
-    else if (demo["device"]) merged["device"] = demo["device"];
-    else merged["device"] = "NPU";
-  }
-
-  return merged;
-}
-
-static void save_yaml(const YAML::Node & node, const std::string & path)
-{
-  std::ofstream fout(path);
-  if (!fout.is_open()) throw std::runtime_error("failed to open " + path);
-  fout << node;
-}
-
-static Eigen::Vector3d xyz_camera_from_gimbal(
-  const auto_aim::Solver & solver,
-  const Eigen::Vector3d & xyz_gimbal)
-{
-  return solver.R_camera2gimbal().transpose() * (xyz_gimbal - solver.t_camera2gimbal());
-}
-
-static bool is_fresh(const sp_vision::DetectPacket & packet, double max_age_ms)
-{
-  const double age_ms =
-    std::chrono::duration<double, std::milli>(SteadyClock::now() - packet.ts).count();
-  return age_ms <= max_age_ms;
-}
-
-static void sort_by_priority(std::list<auto_aim::Armor> & armors)
-{
-  armors.sort([](const auto_aim::Armor & a, const auto_aim::Armor & b) {
-    return a.priority < b.priority;
-  });
-}
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/demo.yaml      | 位置参数，yaml配置文件路径}";
 
 int main(int argc, char * argv[])
 {
+  cv::CommandLineParser cli(argc, argv, keys);
+  if (cli.has("help")) { cli.printMessage(); return 0; }
+  auto config_path = cli.get<std::string>(0);
   rclcpp::init(argc, argv);
 
   tools::Exiter exiter;
-  tools::Recorder recorder;
-  tools::DebugTool debug(2);
-
-  cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
-    cli.printMessage();
-    rclcpp::shutdown();
-    return 0;
-  }
-
-  const std::string demo_path = cli.get<std::string>(0);
-  YAML::Node demo = YAML::LoadFile(demo_path);
-
-  const std::string cam1_path = read_config_path(demo, "front_camera_config", "configs/demo.yaml");
-  const std::string cam2_path = read_config_path(demo, "back_camera_config", "configs/cam2.yaml");
-
-  const std::string front_runtime = "/tmp/sp_front_runtime.yaml";
-  const std::string back_runtime = "/tmp/sp_back_runtime.yaml";
-  save_yaml(build_runtime_config(demo_path, cam1_path, false), front_runtime);
-  save_yaml(build_runtime_config(demo_path, cam2_path, true), back_runtime);
-
-  YAML::Node front_yaml = YAML::LoadFile(front_runtime);
-  YAML::Node back_yaml = YAML::LoadFile(back_runtime);
-
-  fmt::print("[INFO] Front camera config: {}\n", cam1_path);
-  fmt::print("[INFO] Back  camera config: {}\n", cam2_path);
-  fmt::print("[INFO] Front runtime: {}\n", front_runtime);
-  fmt::print("[INFO] Back  runtime: {}\n", back_runtime);
-  fmt::print("[INFO] Front device: {}\n", front_yaml["device"].as<std::string>());
-  fmt::print("[INFO] Back  device: {}\n", back_yaml["device"].as<std::string>());
-  fmt::print("[INFO] Enemy color: {}\n", front_yaml["enemy_color"].as<std::string>());
-
   auto gimbal = std::make_shared<io::GimbalROS>();
   gimbal->start_spin();
 
-  // 相机启动向 sentry_dual_cameras_ros 看齐：
-  // 1) 明确使用 configs/cam1.yaml / configs/cam2.yaml；
-  // 2) 明确使用 io::SNCamera；
-  // 3) 两个相机打开之间保留 2s 间隔，避免 SDK/USB 枚举抢占。
-  fmt::print("[INFO] Opening SNCamera streams...\n");
-  sp_vision::AsyncDetectWorker front_worker("Front", cam1_path, &debug, 0);
+  // 1. 初始化相机与流
+  io::SNCamera camera(config_path);
   std::this_thread::sleep_for(2s);
-  sp_vision::AsyncDetectWorker back_worker("Back", cam2_path, &debug, 1);
+  io::SNCamera back_camera("configs/cam2.yaml");
 
-  // 两台相机都打开后，再初始化 YOLO 并启动检测线程。
-  // 这样不会出现“前摄模型初始化很久，后摄还没来得及打开”的问题。
-  fmt::print("[INFO] Starting async detect workers...\n");
-  front_worker.start(front_runtime);
-  back_worker.start(back_runtime);
+  CameraStream front_stream(&camera);
+  CameraStream back_stream(&back_camera);
 
-  auto_aim::Solver solver_front(front_runtime);
-  auto_aim::Solver solver_back(back_runtime);
-  auto_aim::Tracker tracker(front_runtime, solver_front);
-  auto_aim::Aimer aimer(front_runtime);
-  auto_aim::Shooter shooter(front_runtime);
-  omniperception::Decider decider(front_runtime);
+  // 2. 初始化核心模块 (极其重要：YOLO必须实例化两个，保证线程安全)
+  auto_aim::YOLO yolo_front(config_path, false);
+  auto_aim::YOLO yolo_back(config_path, false);
+  
+  auto_aim::Solver solver(config_path);
+  auto tracker = std::make_unique<auto_aim::Tracker>(config_path, solver);
+  auto_aim::Aimer aimer(config_path);
+  auto_aim::Shooter shooter(config_path);
+  omniperception::Decider decider(config_path);
 
-  uint64_t last_front_seq = 0;
-  bool last_frame_had_control = false;
-  float last_sent_yaw = 0.0f;
-  float last_sent_pitch = 0.0f;
+  constexpr double BULLET_SPEED = 19.6;
+  constexpr auto IMU_DELAY = 2ms;
+  constexpr int DROP_FRAMES_AFTER_BACK = 3;
 
-  double t_q = 0.0;
-  double t_send = 0.0;
+  // ==========================================
+  // 前摄推理线程 (Consumer 1)
+  // ==========================================
+  std::thread front_worker([&]() {
+      cv::Mat img;
+      int drop_frames = 0;
+      
+      while (!exiter.exit()) {
+          std::chrono::steady_clock::time_point t;
+          if (!front_stream.get_latest(img, t)) {
+              std::this_thread::sleep_for(1ms);
+              continue;
+          }
 
-  fmt::print("[INFO] Start async dual-camera ROS loop.\n");
+          // 接收主线程的清空信号
+          if (req_clear_front.exchange(false)) {
+              tracker = std::make_unique<auto_aim::Tracker>(config_path, solver);
+              drop_frames = DROP_FRAMES_AFTER_BACK;
+          }
 
-  while (!exiter.exit() && rclcpp::ok()) {
-    debug.tick_main_loop();
+          Eigen::Quaterniond q = gimbal->q(t - IMU_DELAY);
+          solver.set_R_gimbal2world(q);
+          Eigen::Vector3d pos = tools::eulers(q.toRotationMatrix(), 2, 1, 0);
 
-    // 主循环由前摄检测结果驱动，节奏尽量接近 auto_aim_test_all_ros 的单相机主链路。
-    sp_vision::DetectPacket front;
-    if (!front_worker.latest(front) || !front.valid || front.seq == last_front_seq) {
-      std::this_thread::sleep_for(1ms);
-      continue;
-    }
-    last_front_seq = front.seq;
+          auto armors = yolo_front.detect(img, 0);
+          if (drop_frames > 0) {
+              armors.clear();
+              drop_frames--;
+          }
 
-    Eigen::Quaterniond q_front;
-    {
-      sp_vision::ScopedTimer timer(t_q);
-      q_front = gimbal->q(front.ts - 2ms);
-    }
-    debug.add_gimbal_q_ms(t_q);
+          decider.armor_filter(armors);
+          decider.set_priority(armors);
+          auto targets = tracker->track(armors, t);
 
-    solver_front.set_R_gimbal2world(q_front);
-    Eigen::Vector3d ypr = tools::eulers(q_front.toRotationMatrix(), 2, 1, 0);
+          io::Command cmd{false, false, 0, 0};
+          bool locked = (tracker->state() != "lost");
 
-    auto armors_front = front.armors;
-    decider.armor_filter(armors_front);
-    decider.set_priority(armors_front);
-    sort_by_priority(armors_front);
+          // ===== 新增：只从前摄当前画面里取 xyz =====
+          bool xyz_valid = false;
+          Eigen::Vector3d xyz_camera = Eigen::Vector3d::Zero();
+          Eigen::Vector3d xyz_gimbal = Eigen::Vector3d::Zero();
 
-    auto targets = tracker.track(armors_front, front.ts);
+          // 注意：必须同时满足 locked 和 !armors.empty()
+          // locked 只说明 tracker 没 lost，但 armors.empty() 时可能是历史状态维持，不能发旧 xyz
+          if (locked && !armors.empty()) {
+              const auto & best_armor = armors.front();
 
-    io::Command command{false, false, 0, 0};
-    bool need_publish_xyz = false;
-    Eigen::Vector3d xyz_camera = Eigen::Vector3d::Zero();
-    Eigen::Vector3d xyz_gimbal = Eigen::Vector3d::Zero();
+              xyz_gimbal = best_armor.xyz_in_gimbal;
+              xyz_camera =
+                  solver.R_camera2gimbal().transpose() *
+                  (xyz_gimbal - solver.t_camera2gimbal());
 
-    if (tracker.state() != "lost") {
-      debug.add_found();
+              xyz_valid = true;
+          }
 
-      command = aimer.aim(targets, front.ts, 20, true);
-      command.shoot = shooter.shoot(command, aimer, targets, ypr);
+          if (locked) {
+              cmd = aimer.aim(targets, t, BULLET_SPEED, true);
+              cmd.shoot = shooter.shoot(cmd, aimer, targets, pos);
+          }
 
-      if (command.control && !armors_front.empty()) {
-        const auto & best = armors_front.front();
-        xyz_gimbal = best.xyz_in_gimbal;
-        xyz_camera = xyz_camera_from_gimbal(solver_front, xyz_gimbal);
-        need_publish_xyz = true;
+          // 将结果写入共享内存
+          {
+              std::lock_guard<std::mutex> lock(cmd_mtx);
+              front_locked = locked;
+              front_cmd = cmd;
+
+              // ===== 新增：同步写入前摄 xyz 状态 =====
+              front_xyz_valid = xyz_valid;
+              front_xyz_camera = xyz_camera;
+              front_xyz_gimbal = xyz_gimbal;
+          }
+          fps_counter++;
       }
-    } else {
-      debug.add_lost();
+  });
 
-      sp_vision::DetectPacket back;
-      if (back_worker.latest(back) && back.valid && is_fresh(back, 120.0)) {
-        Eigen::Quaterniond q_back = gimbal->q(back.ts - 2ms);
-        solver_back.set_R_gimbal2world(q_back);
-        const Eigen::Vector3d gimbal_pos_back =
-          tools::eulers(solver_back.R_gimbal2world(), 2, 1, 0);
+  // ==========================================
+  // 后摄推理线程 (Consumer 2)
+  // ==========================================
+  std::thread back_worker([&]() {
+      cv::Mat img;
+      while (!exiter.exit()) {
+          std::chrono::steady_clock::time_point t;
+          if (!back_stream.get_latest(img, t)) {
+              std::this_thread::sleep_for(2ms);
+              continue;
+          }
 
-        auto armors_back = back.armors;
-        decider.armor_filter(armors_back);
-        decider.set_priority(armors_back);
-        sort_by_priority(armors_back);
+          Eigen::Quaterniond q = gimbal->q(t - IMU_DELAY);
+          Eigen::Vector3d pos = tools::eulers(q.toRotationMatrix(), 2, 1, 0);
 
-        command = decider.decide_by_armors(armors_back, gimbal_pos_back, "back");
-        command.shoot = false;  // 后摄只辅助转向，不允许直接开火。
+          auto armors = yolo_back.detect(img, 0);
+          
+          io::Command cmd{false, false, 0, 0};
+          bool has_target = false;
 
-        if (command.control && !armors_back.empty()) {
-          const auto & best = armors_back.front();
-          xyz_gimbal = best.xyz_in_gimbal;
-          xyz_camera = xyz_camera_from_gimbal(solver_back, xyz_gimbal);
-          need_publish_xyz = true;
+          // 复用你 Decider 里提供的基于 armors 直接决策的接口
+          if (!armors.empty()) {
+              cmd = decider.decide_by_armors(armors, pos, "back");
+              if (cmd.control) has_target = true;
+          }
+
+          // 将结果写入共享内存
+          {
+              std::lock_guard<std::mutex> lock(cmd_mtx);
+              back_has_target = has_target;
+              back_cmd = cmd;
+          }
+      }
+  });
+
+  // ==========================================
+  // 主控线程 (Controller / State Machine)
+  // 负责仲裁前后摄指令并下发串口
+  // ==========================================
+  bool waiting_front_lock = false;
+  auto wait_until = std::chrono::steady_clock::now();
+  auto cooldown_until = std::chrono::steady_clock::now();
+  
+  double last_yaw = 0.0, last_pitch = 0.0;
+  bool last_front_detected = false;
+  auto last_fps_time = std::chrono::steady_clock::now();
+
+// [新增] 用于锁存后摄的 180 度转身目标
+  double back_target_yaw = 0.0; 
+  double back_target_pitch = 0.0;
+
+  while (!exiter.exit()) {
+      auto now = std::chrono::steady_clock::now();
+
+      // 从共享内存拉取当前双摄的最新状态
+      bool cur_f_locked = false;
+      io::Command cur_f_cmd{false, false, 0, 0};
+
+      bool cur_b_has_target = false;
+      io::Command cur_b_cmd{false, false, 0, 0};
+
+      bool cur_f_xyz_valid = false;
+      Eigen::Vector3d cur_f_xyz_camera = Eigen::Vector3d::Zero();
+      Eigen::Vector3d cur_f_xyz_gimbal = Eigen::Vector3d::Zero();
+
+      {
+          std::lock_guard<std::mutex> lock(cmd_mtx);
+          cur_f_locked = front_locked;
+          cur_f_cmd = front_cmd;
+          cur_b_has_target = back_has_target;
+          cur_b_cmd = back_cmd;
+
+          cur_f_xyz_valid = front_xyz_valid;
+          cur_f_xyz_camera = front_xyz_camera;
+          cur_f_xyz_gimbal = front_xyz_gimbal;
+      }
+
+      // --- 状态机仲裁与发送 ---
+      if (cur_f_locked) {
+        waiting_front_lock = false;
+        cooldown_until = now + 2000ms; // 前摄锁定期间，死死按住后摄的冷却时间
+        
+        gimbal->send(true, cur_f_cmd.shoot, cur_f_cmd.yaw, 0, 0, cur_f_cmd.pitch, 0, 0);
+
+        // ===== 新增：只在前摄锁定并且 xyz 来自前摄当前画面时发送 =====
+        if (cur_f_xyz_valid) {
+            gimbal->publish_target_xyz(
+                cur_f_xyz_camera,
+                cur_f_xyz_gimbal,
+                gimbal->now());
         }
+
+        last_yaw = cur_f_cmd.yaw;
+        last_pitch = cur_f_cmd.pitch;
+        last_front_detected = true;
+      } 
+      else {
+          // 前摄丢失
+          if (waiting_front_lock && now < wait_until) {
+              // 【关键修复】：处于后摄转身的 800ms 飞行途中
+              // 必须【持续】向电控发送后摄的目标角度，否则电控会因为收不到包而电机掉力！
+              gimbal->send(true, false, back_target_yaw, 0, 0, back_target_pitch, 0, 0);
+          } 
+          else if (now > cooldown_until && cur_b_has_target) {
+              // 刚刚触发后摄接管，【锁存】后摄目标角度
+              back_target_yaw = cur_b_cmd.yaw;
+              back_target_pitch = cur_b_cmd.pitch;
+              
+              // 发送第一包转身指令
+              gimbal->send(true, false, back_target_yaw, 0, 0, back_target_pitch, 0, 0);
+              
+              waiting_front_lock = true;
+              wait_until = now + 800ms;
+              cooldown_until = now + 2000ms; // 冷却 2 秒
+              
+              req_clear_front = true; // 通知前摄线程清空 tracker
+              last_front_detected = false;
+          }
+          else {
+              // 彻底丢失，且没有后摄介入
+              if (last_front_detected) {
+                  // 丢目标第一帧，发送最后一帧角度维持一下
+                  gimbal->send(true, false, last_yaw, 0, 0, last_pitch, 0, 0);
+                  last_front_detected = false;
+              } 
+          }
       }
-    }
 
-    // 对齐 auto_aim_test_all_ros：刚丢目标时只补发一次上一帧角度，不持续刷旧命令。
-    if (!command.control && last_frame_had_control) {
-      command.control = true;
-      command.shoot = false;
-      command.yaw = last_sent_yaw;
-      command.pitch = last_sent_pitch;
-      need_publish_xyz = false;
-      last_frame_had_control = false;
-    } else if (!command.control) {
-      last_frame_had_control = false;
-    }
-
-    {
-      sp_vision::ScopedTimer timer(t_send);
-      if (command.control) {
-        gimbal->send(command.control, command.shoot, command.yaw, 0, 0, command.pitch, 0, 0);
-
-        if (need_publish_xyz) {
-          gimbal->publish_target_xyz(xyz_camera, xyz_gimbal, gimbal->now());
-        }
-
-        last_sent_yaw = command.yaw;
-        last_sent_pitch = command.pitch;
-        last_frame_had_control = true;
+      // --- FPS 极简刷新 ---
+      double elapsed = tools::delta_time(now, last_fps_time);
+      if (elapsed >= 1.0) {
+          int frames = fps_counter.exchange(0);
+          fmt::print("\r[Parallel Vision] FPS: {:.1f} | F_Lock: {} | B_Target: {}", 
+                     frames / elapsed, cur_f_locked, cur_b_has_target);
+          fflush(stdout);
+          last_fps_time = now;
       }
-    }
-    debug.add_gimbal_send_ms(t_send);
-
-    debug.report_if_due(tracker.state() == "tracking", 0, 5);
   }
 
-  front_worker.stop();
-  back_worker.stop();
-  gimbal->stop_spin();
+  // 安全退出线程
+  front_worker.join();
+  back_worker.join();
+  
+  fmt::print("\n");
   rclcpp::shutdown();
   return 0;
 }

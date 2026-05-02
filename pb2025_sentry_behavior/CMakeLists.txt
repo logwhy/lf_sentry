@@ -101,6 +101,9 @@ ament_auto_add_library(calculate_chase_goal SHARED
 )
 list(APPEND plugin_libs calculate_chase_goal)
 
+ament_auto_add_library(exchange_projectile_once SHARED plugins/action/exchange_projectile_once.cpp)
+list(APPEND plugin_libs exchange_projectile_once)
+
 ####### Controls #######
 ament_auto_add_library(recovery_node SHARED plugins/control/recovery_node.cpp)
 list(APPEND plugin_libs recovery_node)

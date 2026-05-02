@@ -16,16 +16,14 @@ point_lio:
     prop_at_freq_of_imu: True
     check_satu: True
     init_map_size: 10
-    point_filter_num: 1                                 # Options: 4, 3
+    point_filter_num: 5                                 # Options: 4, 3
     space_down_sample: True
     filter_size_surf: 0.15                               # Options: 0.5, 0.3, 0.2, 0.15, 0.1
     filter_size_map: 0.2                                # Options: 0.5, 0.3, 0.15, 0.1
     ivox_nearby_type: 18                                # Options: 0, 6, 18, 26
-    runtime_pos_log_enable: True                       # Option: True
+    runtime_pos_log_enable: False                       # Option: True
 
     common:
-      # lid_topic: "merged_cloud"
-      # lid_topic: "/livox/lidar_192_168_1_131"
       lid_topic: "/merged_cloud"
       imu_topic: "/livox/imu_192_168_1_131"
       con_frame: False                                  # True: if you need to combine several LiDAR frames into one
@@ -706,7 +704,7 @@ behavior_server:
     # service_name: "global_costmap/get_costmap"
     # max_radius: 1.0
     # visualize: false
-    robot_radius: 0.0
+    robot_radius: 0.3
     max_radius: 3.5
     service_name: "global_costmap/get_costmap"
     free_threshold: 5

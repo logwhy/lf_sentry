@@ -338,4 +338,47 @@ void Decider::get_auto_aim_target(
   });
 }
 
+io::Command Decider::decide(
+  auto_aim::YOLO & yolo, 
+  const Eigen::Vector3d & gimbal_pos, 
+  const cv::Mat & img, 
+  const std::chrono::steady_clock::time_point & timestamp,
+  const std::string& camera_name)
+{
+  if (img.empty()) {
+      return io::Command{false, false, 0, 0};
+  }
+
+  auto armors = yolo.detect(img);
+  auto empty = armor_filter(armors);
+
+  if (!empty) {
+    auto delta_angle = this->delta_angle(armors, camera_name);
+
+    // 1. 计算目标弧度
+    double target_yaw = gimbal_pos[0] + delta_angle[0] / 57.3;
+
+    // 2. 显式归一化处理
+    const double PI = 3.14159265358979323846;
+    while (target_yaw > PI) target_yaw -= 2 * PI;
+    while (target_yaw < -PI) target_yaw += 2 * PI;
+
+    if(delta_angle[0] > 180.0) {
+      delta_angle[0] -= 360.0; // 将偏航角调整到 [-180, 180] 范围内
+    }
+    
+    tools::logger()->debug(
+      "[{}] delta yaw:{:.2f},target pitch:{:.2f},armor number:{},armor name:{}",
+      camera_name, delta_angle[0], delta_angle[1], armors.size(), auto_aim::ARMOR_NAMES[armors.front().name]);
+
+    return io::Command{
+      true, 
+      false, 
+      target_yaw, 
+      tools::limit_rad(delta_angle[1] / 57.3)};
+  }
+
+  return io::Command{false, false, 0, 0};
+}
+
 }  // namespace omniperception

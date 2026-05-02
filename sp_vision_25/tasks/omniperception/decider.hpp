@@ -31,6 +31,13 @@ public:
   io::Command decide(
     auto_aim::YOLO & yolo, const Eigen::Vector3d & gimbal_pos, io::SNCamera & back_camera);
 
+  // 传入图片进行后摄决策，避免在决策器内部阻塞读图
+  io::Command decide(
+    auto_aim::YOLO & yolo, 
+    const Eigen::Vector3d & gimbal_pos, 
+    const cv::Mat & img, 
+    const std::chrono::steady_clock::time_point & timestamp,
+    const std::string& camera_name = "back");
 
   io::Command decide(const std::vector<DetectionResult> & detection_queue);
 
