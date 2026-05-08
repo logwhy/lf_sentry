@@ -97,6 +97,7 @@ void StandardRobotPpRos2Node::createPublisher()
     this->create_publisher<pb_rm_interfaces::msg::RobotStatus>("referee/robot_status", 10);
   buff_pub_ = this->create_publisher<pb_rm_interfaces::msg::Buff>("referee/buff", 10);
   sentry_info_pub_ = this->create_publisher<pb_rm_interfaces::msg::SentryInfo>("referee/sentry_info", 10);
+  map_command_pub_ = this->create_publisher<geometry_msgs::msg::Point>("/mapcommand", 10);
 }
 
 void StandardRobotPpRos2Node::createNewDebugPublisher(const std::string & name)
@@ -398,6 +399,10 @@ void StandardRobotPpRos2Node::receiveData()
         case ID_SENTRY_INFO: { // 新增分支
           ReceiveSentryInfoData sentry_info_data = fromVector<ReceiveSentryInfoData>(data_buf);
           publishSentryInfo(sentry_info_data);
+        } break;
+        case ID_MAP_COMMAND: {
+          ReceiveMapCommandData map_command_data = fromVector<ReceiveMapCommandData>(data_buf);
+          publishMapCommand(map_command_data);
         } break;
         default: {
           RCLCPP_WARN(get_logger(), "Invalid id: %d", header_frame.id);
@@ -735,6 +740,15 @@ auto msg = pb_rm_interfaces::msg::SentryInfo();
   msg.can_activate_rune = (info2 >> 14) & 0x1;                // bit 14
 
   sentry_info_pub_->publish(msg);
+}
+
+void StandardRobotPpRos2Node::publishMapCommand(ReceiveMapCommandData & map_command)
+{
+  geometry_msgs::msg::Point msg;
+  msg.x = map_command.data.target_position_x;
+  msg.y = map_command.data.target_position_y;
+  msg.z = 0.0;
+  map_command_pub_->publish(msg);
 }
 
 /********************************************************/

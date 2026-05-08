@@ -38,6 +38,7 @@ const uint8_t ID_RFID_STATUS = 0x0A;
 const uint8_t ID_ROBOT_STATUS = 0x0B;
 const uint8_t ID_JOINT_STATE = 0x0C;
 const uint8_t ID_BUFF = 0x0D;
+const uint8_t ID_MAP_COMMAND = 0x0F;
 const uint8_t ID_SENTRY_INFO = 0x0E; // 对应哨兵状态信息
 // Send
 const uint8_t ID_ROBOT_CMD = 0x01;
@@ -366,6 +367,23 @@ struct ReceiveSentryInfoData {
     uint32_t sentry_info;    // bit 0-31
     uint16_t sentry_info_2;  // bit 0-15
   } __attribute__((packed)) data;
+  uint16_t crc;
+} __attribute__((packed));
+
+struct ReceiveMapCommandData
+{
+  HeaderFrame frame_header;
+  uint32_t time_stamp;
+
+  struct
+  {
+    float target_position_x;
+    float target_position_y;
+    uint8_t cmd_keyboard;
+    uint8_t target_robot_id;
+    uint16_t cmd_source;
+  } __attribute__((packed)) data;
+
   uint16_t crc;
 } __attribute__((packed));
 /********************************************************/

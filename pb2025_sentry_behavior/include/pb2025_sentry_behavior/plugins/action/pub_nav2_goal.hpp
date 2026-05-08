@@ -18,6 +18,7 @@
 #include <string>
 
 #include "behaviortree_ros2/bt_topic_pub_node.hpp"
+#include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
 namespace pb2025_sentry_behavior

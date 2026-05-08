@@ -23,6 +23,7 @@
 #include "auto_aim_interfaces/msg/target.hpp"
 #include "example_interfaces/msg/float64.hpp"
 #include "example_interfaces/msg/u_int8.hpp"
+#include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "pb_rm_interfaces/msg/buff.hpp"
 #include "pb_rm_interfaces/msg/event_data.hpp"
@@ -78,6 +79,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
   rclcpp::Publisher<pb_rm_interfaces::msg::Buff>::SharedPtr buff_pub_;
   rclcpp::Publisher<pb_rm_interfaces::msg::SentryInfo>::SharedPtr sentry_info_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr map_command_pub_;
   // Subscribe
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr cmd_gimbal_joint_sub_;
@@ -113,6 +115,7 @@ private:
   void publishJointState(ReceiveJointState & data);
   void publishBuff(ReceiveBuff & data);
   void publishSentryInfo(ReceiveSentryInfoData & data);
+  void publishMapCommand(ReceiveMapCommandData & data);
 
   void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void cmdGimbalJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg);

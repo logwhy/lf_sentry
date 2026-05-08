@@ -179,7 +179,7 @@
             </Sequence>
 
                         <!-- 8.5 进攻状态下尝试追击；失败则回退到后续常态点 -->
-            <Sequence>
+            <!-- <Sequence>
               <ReactiveFallback>
                 <IsAttackState mode="enemy_visible"
                                topic_name="cmd_gimbal"
@@ -223,7 +223,7 @@
               <PubNav2Goal goal_pose="{chase_goal}"
                            frame_id="odom"
                            topic_name="goal_pose"/>
-            </Sequence>
+            </Sequence> -->
 
             <!-- 9. 1 分钟没敌人 + 进攻超过 3 分钟 + HP 大于 200：切防御姿态 -->
             <Sequence>
@@ -286,6 +286,15 @@
 
               <!-- 常态巡逻/进攻待机点：改这里，不再依赖发现敌人 -->
               <PubNav2Goal goal="3.65;-3.5;0"
+                           map_command="{@map_command}"
+                           map_command_team="red"
+                           map_command_red_origin_x="2.7"
+                           map_command_red_origin_y="9.9"
+                           map_command_blue_origin_x="26.0"
+                           map_command_blue_origin_y="6.0"
+                           map_command_offset_x="0.0"
+                           map_command_offset_y="0.0"
+                           map_command_yaw="0.0"
                            topic_name="goal_pose"/>
             </Sequence>
 
@@ -356,6 +365,15 @@
 
     <Action ID="PubNav2Goal">
       <input_port name="goal" default="0;0;0" type="std::string">Goal in x;y;yaw format</input_port>
+      <input_port name="map_command" default="{@map_command}">Map command point from /mapcommand</input_port>
+      <input_port name="map_command_team" default="red" type="std::string">red or blue map command transform</input_port>
+      <input_port name="map_command_red_origin_x" default="2.7" type="double">Red origin X in field coordinates</input_port>
+      <input_port name="map_command_red_origin_y" default="9.9" type="double">Red origin Y in field coordinates</input_port>
+      <input_port name="map_command_blue_origin_x" default="26.0" type="double">Blue origin X in field coordinates</input_port>
+      <input_port name="map_command_blue_origin_y" default="6.0" type="double">Blue origin Y in field coordinates</input_port>
+      <input_port name="map_command_offset_x" default="0.0" type="double">Offset added to map command X</input_port>
+      <input_port name="map_command_offset_y" default="0.0" type="double">Offset added to map command Y</input_port>
+      <input_port name="map_command_yaw" default="0.0" type="double">Yaw used for map command goal</input_port>
       <input_port name="topic_name" default="goal_pose" type="std::string">Topic name</input_port>
     </Action>
 

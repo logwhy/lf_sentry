@@ -32,6 +32,17 @@
         <Condition ID="CanFreeRespawn">
             <input_port name="key_port" type="pb_rm_interfaces::msg::SentryInfo_&lt;std::allocator&lt;void&gt; &gt;" default="{@referee_sentryInfo}">SentryInfo port on blackboard</input_port>
         </Condition>
+        <Action ID="ExchangeProjectileOnce">
+            <input_port name="increment_step" type="int" default="1">Increase exchange amount by this value every new supply-zone visit</input_port>
+            <input_port name="topic_name" type="std::string" default="sentry_cmd">Topic name of SentryCmd</input_port>
+            <input_port name="base_exchange" type="int" default="150">First exchange projectile amount</input_port>
+            <input_port name="max_exchange" type="int" default="500">Maximum projectile exchange value clamp</input_port>
+            <input_port name="friendly_supply_zone_exchange" type="bool" default="true">Use friendly supply zone exchange flag</input_port>
+            <input_port name="ammo_threshold" type="int" default="50">Only exchange when projectile allowance is lower than this value</input_port>
+            <input_port name="friendly_supply_zone_non_exchange" type="bool" default="true">Use friendly supply zone non-exchange flag</input_port>
+            <input_port name="robot_status_key_port" type="pb_rm_interfaces::msg::RobotStatus_&lt;std::allocator&lt;void&gt; &gt;" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+            <input_port name="rfid_key_port" type="pb_rm_interfaces::msg::RfidStatus_&lt;std::allocator&lt;void&gt; &gt;" default="{@referee_rfidStatus}">RfidStatus port on blackboard</input_port>
+        </Action>
         <Condition ID="IsAttackState">
             <input_port name="min_attack_duration_s" type="double" default="180.000000">Minimum attack duration before leaving attack</input_port>
             <input_port name="no_enemy_timeout_s" type="double" default="60.000000">No enemy duration before leaving attack</input_port>

@@ -44,7 +44,9 @@ public:
     bool get_latest(cv::Mat& out_img, std::chrono::steady_clock::time_point& out_t) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (latest_frame_.img.empty()) return false;
-        latest_frame_.img.copyTo(out_img); 
+        
+        // 【修改点 1】：将 copyTo 改为 swap，实现图像零拷贝，极大节省 Intel NUC 的内存带宽
+        cv::swap(out_img, latest_frame_.img); 
         out_t = latest_frame_.timestamp;
         return true;
     }
@@ -56,7 +58,8 @@ private:
             camera_->read(img, t); 
             if (!img.empty()) {
                 std::lock_guard<std::mutex> lock(mutex_);
-                latest_frame_.img = img;
+                // 【修改点 1 配合】：同样使用 swap 移交图像所有权
+                cv::swap(latest_frame_.img, img);
                 latest_frame_.timestamp = t;
             }
         }
@@ -110,7 +113,7 @@ int main(int argc, char * argv[])
   CameraStream front_stream(&camera);
   CameraStream back_stream(&back_camera);
 
-  // 2. 初始化核心模块 (极其重要：YOLO必须实例化两个，保证线程安全)
+  // 2. 初始化核心模块
   auto_aim::YOLO yolo_front(config_path, false);
   auto_aim::YOLO yolo_back(config_path, false);
   
@@ -125,7 +128,7 @@ int main(int argc, char * argv[])
   constexpr int DROP_FRAMES_AFTER_BACK = 3;
 
   // ==========================================
-  // 前摄推理线程 (Consumer 1)
+  // 前摄推理线程 (Consumer 1) - 满载运行
   // ==========================================
   std::thread front_worker([&]() {
       cv::Mat img;
@@ -138,7 +141,6 @@ int main(int argc, char * argv[])
               continue;
           }
 
-          // 接收主线程的清空信号
           if (req_clear_front.exchange(false)) {
               tracker = std::make_unique<auto_aim::Tracker>(config_path, solver);
               drop_frames = DROP_FRAMES_AFTER_BACK;
@@ -161,21 +163,16 @@ int main(int argc, char * argv[])
           io::Command cmd{false, false, 0, 0};
           bool locked = (tracker->state() != "lost");
 
-          // ===== 新增：只从前摄当前画面里取 xyz =====
           bool xyz_valid = false;
           Eigen::Vector3d xyz_camera = Eigen::Vector3d::Zero();
           Eigen::Vector3d xyz_gimbal = Eigen::Vector3d::Zero();
 
-          // 注意：必须同时满足 locked 和 !armors.empty()
-          // locked 只说明 tracker 没 lost，但 armors.empty() 时可能是历史状态维持，不能发旧 xyz
           if (locked && !armors.empty()) {
               const auto & best_armor = armors.front();
-
               xyz_gimbal = best_armor.xyz_in_gimbal;
               xyz_camera =
                   solver.R_camera2gimbal().transpose() *
                   (xyz_gimbal - solver.t_camera2gimbal());
-
               xyz_valid = true;
           }
 
@@ -184,13 +181,11 @@ int main(int argc, char * argv[])
               cmd.shoot = shooter.shoot(cmd, aimer, targets, pos);
           }
 
-          // 将结果写入共享内存
           {
               std::lock_guard<std::mutex> lock(cmd_mtx);
               front_locked = locked;
               front_cmd = cmd;
 
-              // ===== 新增：同步写入前摄 xyz 状态 =====
               front_xyz_valid = xyz_valid;
               front_xyz_camera = xyz_camera;
               front_xyz_gimbal = xyz_gimbal;
@@ -200,14 +195,19 @@ int main(int argc, char * argv[])
   });
 
   // ==========================================
-  // 后摄推理线程 (Consumer 2)
+  // 后摄推理线程 (Consumer 2) - 限制 60 FPS
   // ==========================================
   std::thread back_worker([&]() {
       cv::Mat img;
+      // 【修改点 2】：设定 60 帧的最小周期 (1000ms / 60 ≈ 16.67ms = 16667us)
+      const auto min_period = std::chrono::microseconds(16667); 
+
       while (!exiter.exit()) {
+          auto start_time = std::chrono::steady_clock::now();
+
           std::chrono::steady_clock::time_point t;
           if (!back_stream.get_latest(img, t)) {
-              std::this_thread::sleep_for(2ms);
+              std::this_thread::sleep_for(1ms); // 原来的 2ms 改为 1ms，防止因为等待导致错过 60 帧对齐
               continue;
           }
 
@@ -219,24 +219,28 @@ int main(int argc, char * argv[])
           io::Command cmd{false, false, 0, 0};
           bool has_target = false;
 
-          // 复用你 Decider 里提供的基于 armors 直接决策的接口
           if (!armors.empty()) {
               cmd = decider.decide_by_armors(armors, pos, "back");
               if (cmd.control) has_target = true;
           }
 
-          // 将结果写入共享内存
           {
               std::lock_guard<std::mutex> lock(cmd_mtx);
               back_has_target = has_target;
               back_cmd = cmd;
+          }
+
+          // 【修改点 2】：帧率限制逻辑，保证不低于 60 帧，但绝不超跑
+          auto end_time = std::chrono::steady_clock::now();
+          auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+          if (elapsed < min_period) {
+              std::this_thread::sleep_for(min_period - elapsed);
           }
       }
   });
 
   // ==========================================
   // 主控线程 (Controller / State Machine)
-  // 负责仲裁前后摄指令并下发串口
   // ==========================================
   bool waiting_front_lock = false;
   auto wait_until = std::chrono::steady_clock::now();
@@ -246,14 +250,12 @@ int main(int argc, char * argv[])
   bool last_front_detected = false;
   auto last_fps_time = std::chrono::steady_clock::now();
 
-// [新增] 用于锁存后摄的 180 度转身目标
   double back_target_yaw = 0.0; 
   double back_target_pitch = 0.0;
 
   while (!exiter.exit()) {
       auto now = std::chrono::steady_clock::now();
 
-      // 从共享内存拉取当前双摄的最新状态
       bool cur_f_locked = false;
       io::Command cur_f_cmd{false, false, 0, 0};
 
@@ -279,11 +281,10 @@ int main(int argc, char * argv[])
       // --- 状态机仲裁与发送 ---
       if (cur_f_locked) {
         waiting_front_lock = false;
-        cooldown_until = now + 2000ms; // 前摄锁定期间，死死按住后摄的冷却时间
+        cooldown_until = now + 2000ms; 
         
         gimbal->send(true, cur_f_cmd.shoot, cur_f_cmd.yaw, 0, 0, cur_f_cmd.pitch, 0, 0);
 
-        // ===== 新增：只在前摄锁定并且 xyz 来自前摄当前画面时发送 =====
         if (cur_f_xyz_valid) {
             gimbal->publish_target_xyz(
                 cur_f_xyz_camera,
@@ -296,31 +297,24 @@ int main(int argc, char * argv[])
         last_front_detected = true;
       } 
       else {
-          // 前摄丢失
           if (waiting_front_lock && now < wait_until) {
-              // 【关键修复】：处于后摄转身的 800ms 飞行途中
-              // 必须【持续】向电控发送后摄的目标角度，否则电控会因为收不到包而电机掉力！
               gimbal->send(true, false, back_target_yaw, 0, 0, back_target_pitch, 0, 0);
           } 
           else if (now > cooldown_until && cur_b_has_target) {
-              // 刚刚触发后摄接管，【锁存】后摄目标角度
               back_target_yaw = cur_b_cmd.yaw;
               back_target_pitch = cur_b_cmd.pitch;
               
-              // 发送第一包转身指令
               gimbal->send(true, false, back_target_yaw, 0, 0, back_target_pitch, 0, 0);
               
               waiting_front_lock = true;
               wait_until = now + 800ms;
-              cooldown_until = now + 2000ms; // 冷却 2 秒
+              cooldown_until = now + 2000ms; 
               
-              req_clear_front = true; // 通知前摄线程清空 tracker
+              req_clear_front = true; 
               last_front_detected = false;
           }
           else {
-              // 彻底丢失，且没有后摄介入
               if (last_front_detected) {
-                  // 丢目标第一帧，发送最后一帧角度维持一下
                   gimbal->send(true, false, last_yaw, 0, 0, last_pitch, 0, 0);
                   last_front_detected = false;
               } 
@@ -331,14 +325,16 @@ int main(int argc, char * argv[])
       double elapsed = tools::delta_time(now, last_fps_time);
       if (elapsed >= 1.0) {
           int frames = fps_counter.exchange(0);
-          fmt::print("\r[Parallel Vision] FPS: {:.1f} | F_Lock: {} | B_Target: {}", 
+          fmt::print("\r[Parallel Vision] F_FPS: {:.1f} | F_Lock: {} | B_Target: {}", 
                      frames / elapsed, cur_f_locked, cur_b_has_target);
           fflush(stdout);
           last_fps_time = now;
       }
+
+      // 【修改点 3】：极短休眠让出 CPU 切片，彻底解决主控线程 100% 占用问题
+      std::this_thread::sleep_for(1ms); 
   }
 
-  // 安全退出线程
   front_worker.join();
   back_worker.join();
   
