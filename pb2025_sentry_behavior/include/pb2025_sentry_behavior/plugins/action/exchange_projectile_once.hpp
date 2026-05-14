@@ -34,8 +34,19 @@ private:
 
   bool inited_ = false;
 
+  // 本次补给区访问是否已经兑换过
   bool exchanged_this_visit_ = false;
+
+  // 是否确认处于补给区访问过程中
   bool was_in_supply_zone_ = false;
+
+  // RFID 离开补给区去抖：不是一帧没检测到就认为离开
+  bool leave_candidate_started_ = false;
+  rclcpp::Time leave_candidate_start_time_;
+
+  // 兑换冷却：防止 RFID 抖动 / 裁判系统状态延迟导致短时间重复兑换
+  bool last_exchange_time_valid_ = false;
+  rclcpp::Time last_exchange_time_;
 
   int exchange_index_ = 0;
   int last_exchange_amount_ = 0;

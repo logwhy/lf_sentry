@@ -1,11 +1,19 @@
 #include "pb2025_sentry_behavior/plugins/condition/is_attack_state.hpp"
 
 #include <cstdint>
+#include <functional>
 
 #include "behaviortree_cpp/bt_factory.h"
 
 namespace pb2025_sentry_behavior
 {
+
+std::mutex IsAttackStateCondition::shared_mutex_;
+bool IsAttackStateCondition::received_once_ = false;
+bool IsAttackStateCondition::attack_started_ = false;
+rclcpp::Time IsAttackStateCondition::last_enemy_time_{0, 0, RCL_ROS_TIME};
+rclcpp::Time IsAttackStateCondition::attack_start_time_{0, 0, RCL_ROS_TIME};
+bool IsAttackStateCondition::attack_finished_ = false;
 
 IsAttackStateCondition::IsAttackStateCondition(
   const std::string & name,
@@ -17,7 +25,8 @@ IsAttackStateCondition::IsAttackStateCondition(
 BT::PortsList IsAttackStateCondition::providedPorts()
 {
   return {
-    BT::InputPort<std::string>("mode", "keep_attack", "keep_attack / can_leave / enemy_visible"),
+    BT::InputPort<std::string>(
+      "mode", "keep_attack", "keep_attack / can_leave / enemy_visible / reset"),
     BT::InputPort<std::string>("topic_name", "cmd_gimbal", "Topic name of gimbal command"),
     BT::InputPort<int>("detect_timeout_ms", 500, "Enemy visible timeout in milliseconds"),
     BT::InputPort<double>("no_enemy_timeout_s", 60.0, "No enemy duration before leaving attack"),
@@ -62,19 +71,10 @@ void IsAttackStateCondition::initOnce()
 void IsAttackStateCondition::gimbalCmdCallback(
   const pb_rm_interfaces::msg::GimbalCmd::SharedPtr /*msg*/)
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(shared_mutex_);
 
-  const auto now = node_->now();
-
-  const bool start_new_attack = (!attack_started_) || canLeaveAttackLocked(now);
-
-  last_enemy_time_ = now;
+  last_enemy_time_ = node_->now();
   received_once_ = true;
-
-  if (start_new_attack) {
-    attack_started_ = true;
-    attack_start_time_ = now;
-  }
 }
 
 bool IsAttackStateCondition::isEnemyRecentLocked(const rclcpp::Time & now) const
@@ -86,7 +86,7 @@ bool IsAttackStateCondition::isEnemyRecentLocked(const rclcpp::Time & now) const
   const auto dt = now - last_enemy_time_;
   const auto timeout_ns = static_cast<int64_t>(detect_timeout_ms_) * 1000 * 1000;
 
-  return dt.nanoseconds() <= timeout_ns;
+  return dt.nanoseconds() >= 0 && dt.nanoseconds() <= timeout_ns;
 }
 
 bool IsAttackStateCondition::canLeaveAttackLocked(const rclcpp::Time & now) const
@@ -117,18 +117,41 @@ BT::NodeStatus IsAttackStateCondition::tick()
   getInput("no_enemy_timeout_s", no_enemy_timeout_s_);
   getInput("min_attack_duration_s", min_attack_duration_s_);
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(shared_mutex_);
 
   const auto now = node_->now();
   const bool enemy_recent = isEnemyRecentLocked(now);
   const bool can_leave = canLeaveAttackLocked(now);
 
+  if (mode_ == "reset") {
+    received_once_ = false;
+    attack_started_ = false;
+    attack_finished_ = false;
+    last_enemy_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
+    attack_start_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
+    return BT::NodeStatus::SUCCESS;
+  }
+
   if (mode_ == "enemy_visible") {
-    return enemy_recent ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+    if (!enemy_recent) {
+      return BT::NodeStatus::FAILURE;
+    }
+
+    if (!attack_started_ || attack_finished_) {
+      attack_started_ = true;
+      attack_finished_ = false;
+      attack_start_time_ = now;
+    }
+
+    return BT::NodeStatus::SUCCESS;
   }
 
   if (mode_ == "can_leave") {
-    return can_leave ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+    if (can_leave) {
+      attack_finished_ = true;
+      return BT::NodeStatus::SUCCESS;
+    }
+    return BT::NodeStatus::FAILURE;
   }
 
   if (mode_ == "keep_attack") {

@@ -41,6 +41,8 @@ const uint8_t ID_BUFF = 0x0D;
 const uint8_t ID_MAP_COMMAND = 0x0F;
 const uint8_t ID_SENTRY_INFO = 0x0E; // 对应哨兵状态信息
 // Send
+const uint8_t ID_BULLET_SPEED = 0x10; // Receive bullet speed; protocol label "0x0G".
+// Send
 const uint8_t ID_ROBOT_CMD = 0x01;
 const uint8_t ID_SENTRY_CMD = 0x04; // 哨兵自主决策指令
 
@@ -386,6 +388,19 @@ struct ReceiveMapCommandData
 
   uint16_t crc;
 } __attribute__((packed));
+
+struct ReceiveBulletSpeedData
+{
+  HeaderFrame frame_header;
+  uint32_t time_stamp;
+
+  struct
+  {
+    float bullet_speed;
+  } __attribute__((packed)) data;
+
+  uint16_t crc;
+} __attribute__((packed));
 /********************************************************/
 /* Send data                                            */
 /********************************************************/
@@ -454,8 +469,9 @@ struct SendSentryCmdData
 template <typename T>
 inline T fromVector(const std::vector<uint8_t> & data)
 {
-  T packet;
-  std::copy(data.begin(), data.end(), reinterpret_cast<uint8_t *>(&packet));
+  T packet{};
+  const auto copy_size = std::min(data.size(), sizeof(T));
+  std::copy(data.begin(), data.begin() + copy_size, reinterpret_cast<uint8_t *>(&packet));
   return packet;
 }
 

@@ -107,7 +107,7 @@ terrain_analysis:
     decayTime: 0.5                      # 点云时间差阈值 大于则不会被处理
     noDecayDis: 0.0                     # 点云距离阈值 小于该阈值不考虑时间差
     clearingDis: 0.0                    # 该距离外的点会被清除
-    useSorting: True                    # 这个参数开起来就能上坡了；如果 use_sorting,那么就以周围点中的分位点作为地面点，否则以最低点作为地面点；周围其余点相对于地面点的高度作为通过代价，所以对于坡面，有的点的代价是正，有的是负，就相互抵消了；不要与 consider_drop 同时开启，计算上会有冲突
+    useSorting: False                    # 这个参数开起来就能上坡了；如果 use_sorting,那么就以周围点中的分位点作为地面点，否则以最低点作为地面点；周围其余点相对于地面点的高度作为通过代价，所以对于坡面，有的点的代价是正，有的是负，就相互抵消了；不要与 consider_drop 同时开启，计算上会有冲突
     quantileZ: 0.2                      # useful if use_sorting is enabled.
     considerDrop: False                 # 考虑凹下去的地面,开启则将相对于地面点的高度取绝对值
     limitGroundLift: False

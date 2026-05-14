@@ -237,14 +237,14 @@ bool Decider::armor_filter(std::list<auto_aim::Armor> & armors)
   // 不打工程
   // armors.remove_if([&](const auto_aim::Armor & a) { return a.name == auto_aim::ArmorName::two; });
   // 不打前哨站
-  armors.remove_if(
-    [&](const auto_aim::Armor & a) { return a.name == auto_aim::ArmorName::outpost; });
+  // armors.remove_if(
+  //   [&](const auto_aim::Armor & a) { return a.name == auto_aim::ArmorName::outpost; });
 
   // 过滤掉刚复活无敌的装甲板
-  armors.remove_if([&](const auto_aim::Armor & a) {
-    return std::find(invincible_armor_.begin(), invincible_armor_.end(), a.name) !=
-           invincible_armor_.end();
-  });
+  // armors.remove_if([&](const auto_aim::Armor & a) {
+  //   return std::find(invincible_armor_.begin(), invincible_armor_.end(), a.name) !=
+  //          invincible_armor_.end();
+  // });
 
   return armors.empty();
 }

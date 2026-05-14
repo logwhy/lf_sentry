@@ -123,7 +123,6 @@ int main(int argc, char * argv[])
   auto_aim::Shooter shooter(config_path);
   omniperception::Decider decider(config_path);
 
-  constexpr double BULLET_SPEED = 19.6;
   constexpr auto IMU_DELAY = 2ms;
   constexpr int DROP_FRAMES_AFTER_BACK = 3;
 
@@ -177,7 +176,8 @@ int main(int argc, char * argv[])
           }
 
           if (locked) {
-              cmd = aimer.aim(targets, t, BULLET_SPEED, true);
+              const auto bullet_speed = static_cast<double>(gimbal->state().bullet_speed);
+              cmd = aimer.aim(targets, t, bullet_speed, true);
               cmd.shoot = shooter.shoot(cmd, aimer, targets, pos);
           }
 

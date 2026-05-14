@@ -171,7 +171,7 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   }
 
   // 不考虑小陀螺
-  constexpr double SPIN_THRESHOLD = 2;
+  constexpr double SPIN_THRESHOLD = 7;
   if (std::abs(target.ekf_x()[7]) < SPIN_THRESHOLD && target.name != ArmorName::outpost) {
     // 选择在可射击范围内的装甲板
     std::vector<int> id_list;

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "auto_aim_interfaces/msg/target.hpp"
+#include "example_interfaces/msg/float32.hpp"
 #include "example_interfaces/msg/float64.hpp"
 #include "example_interfaces/msg/u_int8.hpp"
 #include "geometry_msgs/msg/point.hpp"
@@ -33,7 +34,7 @@
 #include "pb_rm_interfaces/msg/rfid_status.hpp"
 #include "pb_rm_interfaces/msg/robot_state_info.hpp"
 #include "pb_rm_interfaces/msg/robot_status.hpp"
-#include "pb_rm_interfaces/msg/sentry_info.hpp"  
+#include "pb_rm_interfaces/msg/sentry_info.hpp"
 #include "pb_rm_interfaces/msg/sentry_cmd.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
@@ -80,6 +81,7 @@ private:
   rclcpp::Publisher<pb_rm_interfaces::msg::Buff>::SharedPtr buff_pub_;
   rclcpp::Publisher<pb_rm_interfaces::msg::SentryInfo>::SharedPtr sentry_info_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr map_command_pub_;
+  rclcpp::Publisher<example_interfaces::msg::Float32>::SharedPtr bullet_speed_pub_;
   // Subscribe
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr cmd_gimbal_joint_sub_;
@@ -116,6 +118,7 @@ private:
   void publishBuff(ReceiveBuff & data);
   void publishSentryInfo(ReceiveSentryInfoData & data);
   void publishMapCommand(ReceiveMapCommandData & data);
+  void publishBulletSpeed(ReceiveBulletSpeedData & data);
 
   void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void cmdGimbalJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg);

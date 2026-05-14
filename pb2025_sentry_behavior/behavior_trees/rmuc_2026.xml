@@ -19,6 +19,14 @@
                         v_x="0.0"
                         duration="0.0"
                         topic_name="cmd_vel"/>
+          <SetSentryCmd posture_command="3"
+                        topic_name="sentry_cmd"/>
+
+          <IsAttackState mode="reset"
+                        topic_name="cmd_gimbal"
+                        detect_timeout_ms="500"
+                        no_enemy_timeout_s="60.0"
+                        min_attack_duration_s="180.0"/>
         </Sequence>
       </ForceFailure>
     </Fallback>
@@ -41,25 +49,7 @@
                             topic_name="sentry_cmd"/>
             </Sequence>
 
-            <!-- 2. 已经在补给区 + 弹丸少于 50：本次补给区访问只兑换一次；每次重新回补给区，兑弹量 +1 -->
-            <Sequence>
-              <ExchangeProjectileOnce
-                rfid_key_port="{@referee_rfidStatus}"
-                robot_status_key_port="{@referee_robotStatus}"
-                friendly_supply_zone_exchange="true"
-                friendly_supply_zone_non_exchange="true"
-                ammo_threshold="50"
-                base_exchange="150"
-                increment_step="1"
-                max_exchange="200"
-                topic_name="sentry_cmd"/>
-
-              <PublishSpinSpeed spin_speed="7.0"
-                                duration="0.0"
-                                topic_name="cmd_spin"/>
-            </Sequence>
-
-            <!-- 3. 已经在补给区 + HP 小于 150：原地等待规则自动回血，不兑换弹丸、不请求回血、不切姿态 -->
+            <!-- 3. 已经在补给区 + HP 小于 360：原地等待规则自动回血，不兑换弹丸、不请求回血、不切姿态 -->
             <Sequence>
               <IsRfidDetected friendly_supply_zone_exchange="true"
                               friendly_supply_zone_non_exchange="true"
@@ -68,16 +58,43 @@
                               key_port="{@referee_rfidStatus}"/>
 
               <Inverter>
-                <IsStatusOK hp_min="150"
+                <IsStatusOK hp_min="360"
                             heat_max="999"
                             ammo_min="0"
                             key_port="{@referee_robotStatus}"/>
               </Inverter>
 
+              <IsAttackState mode="reset"
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
+
               <PublishSpinSpeed spin_speed="7.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
             </Sequence>
+
+            <!-- 2. 已经在补给区 + 弹丸少于 50：本次补给区访问只兑换一次；每次重新回补给区，兑弹量 +1 -->
+            <Sequence>
+            <ExchangeProjectileOnce
+              rfid_key_port="{@referee_rfidStatus}"
+              robot_status_key_port="{@referee_robotStatus}"
+              friendly_supply_zone_exchange="true"
+              friendly_supply_zone_non_exchange="true"
+              ammo_threshold="50"
+              min_gold="150"
+              base_exchange="150"
+              increment_step="1"
+              max_exchange="200"
+              topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="7.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+            </Sequence>
+
+
 
             <!-- 4. HP 小于等于 120 且不在补给区：最高优先级，直接切移动姿态回补给区 -->
             <Sequence>
@@ -96,6 +113,12 @@
                                 key_port="{@referee_rfidStatus}"/>
               </Inverter>
 
+              <IsAttackState mode="reset"
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
+
               <SetSentryCmd posture_command="3"
                             topic_name="sentry_cmd"/>
 
@@ -104,7 +127,7 @@
                                 topic_name="cmd_spin"/>
 
               <!-- 补给区点位：改补给区目标点就改这里 -->
-              <PubNav2Goal goal="0.0;0.0;0.0"
+              <PubNav2Goal goal="-1.7;-6.2;0"
                            topic_name="goal_pose"/>
             </Sequence>
 
@@ -117,6 +140,9 @@
                             key_port="{@referee_robotStatus}"/>
               </Inverter>
 
+              <IsGoldCoinEnough min_gold="150"
+                                key_port="{@referee_robotStatus}"/>
+
               <Inverter>
                 <IsRfidDetected friendly_supply_zone_exchange="true"
                                 friendly_supply_zone_non_exchange="true"
@@ -125,25 +151,22 @@
                                 key_port="{@referee_rfidStatus}"/>
               </Inverter>
 
+              <IsAttackState mode="reset"
+                             topic_name="cmd_gimbal"
+                             detect_timeout_ms="500"
+                             no_enemy_timeout_s="60.0"
+                             min_attack_duration_s="180.0"/>
+
+              <SetSentryCmd posture_command="3"
+                            topic_name="sentry_cmd"/>
+
               <PublishSpinSpeed spin_speed="7.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
 
               <!-- 补给区点位：改补弹目标点就改这里 -->
-              <PubNav2Goal goal="-1.0;-7.0;0.0"
+              <PubNav2Goal goal="-1.7;-6.2;0"
                            topic_name="goal_pose"/>
-            </Sequence>
-
-            <!-- 6. 3 秒内扣血大于 40：高速小陀螺 10 秒，不切姿态 -->
-            <Sequence>
-              <IsHpDecreased window_s="3.0"
-                             drop_threshold="40"
-                             hold_s="10.0"
-                             key_port="{@referee_robotStatus}"/>
-
-              <PublishSpinSpeed spin_speed="14.0"
-                                duration="0.0"
-                                topic_name="cmd_spin"/>
             </Sequence>
 
             <!-- 7. 当前看到敌人：只切进攻姿态 + 高速小陀螺，不负责发导航点 -->
@@ -157,12 +180,24 @@
               <SetSentryCmd posture_command="1"
                             topic_name="sentry_cmd"/>
 
-              <PublishSpinSpeed spin_speed="14.0"
+              <PublishSpinSpeed spin_speed="8.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
+
+              <PubNav2Goal goal="4.88;-0.59;0"
+                           map_command="{@map_command}"
+                           map_command_team="red"
+                           map_command_red_origin_x="3.9"
+                           map_command_red_origin_y="8.087"
+                           map_command_blue_origin_x="26.0"
+                           map_command_blue_origin_y="6.0"
+                           map_command_offset_x="0.0"
+                           map_command_offset_y="0.0"
+                           map_command_yaw="0.0"
+                           topic_name="goal_pose"/>
             </Sequence>
 
-            <!-- 8. 处于进攻保持窗口：继续保持进攻姿态，但小陀螺恢复 7 rad/s -->
+            <!-- 8. 处于进攻保持窗口：继续保持进攻姿态，小陀螺 14 rad/s -->
             <Sequence>
               <IsAttackState mode="keep_attack"
                              topic_name="cmd_gimbal"
@@ -173,9 +208,21 @@
               <SetSentryCmd posture_command="1"
                             topic_name="sentry_cmd"/>
 
-              <PublishSpinSpeed spin_speed="7.0"
+              <PublishSpinSpeed spin_speed="8.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
+
+              <PubNav2Goal goal="4.88;-0.59;0"
+                           map_command="{@map_command}"
+                           map_command_team="red"
+                           map_command_red_origin_x="3.879"
+                           map_command_red_origin_y="8.087"
+                           map_command_blue_origin_x="26.0"
+                           map_command_blue_origin_y="6.0"
+                           map_command_offset_x="0.0"
+                           map_command_offset_y="0.0"
+                           map_command_yaw="0.0"
+                           topic_name="goal_pose"/>
             </Sequence>
 
                         <!-- 8.5 进攻状态下尝试追击；失败则回退到后续常态点 -->
@@ -224,6 +271,29 @@
                            frame_id="odom"
                            topic_name="goal_pose"/>
             </Sequence> -->
+            <!-- 6. 3 秒内扣血大于 40：高速小陀螺 10 秒，不切姿态 -->
+            <Sequence>
+              <IsHpDecreased window_s="3.0"
+                             drop_threshold="40"
+                             hold_s="10.0"
+                             key_port="{@referee_robotStatus}"/>
+
+              <PublishSpinSpeed spin_speed="14.0"
+                                duration="0.0"
+                                topic_name="cmd_spin"/>
+
+              <PubNav2Goal goal="4.88;-0.59;0"
+                           map_command="{@map_command}"
+                           map_command_team="red"
+                           map_command_red_origin_x="3.879"
+                           map_command_red_origin_y="8.087"
+                           map_command_blue_origin_x="26.0"
+                           map_command_blue_origin_y="6.0"
+                           map_command_offset_x="0.0"
+                           map_command_offset_y="0.0"
+                           map_command_yaw="0.0"
+                           topic_name="goal_pose"/>
+            </Sequence>
 
             <!-- 9. 1 分钟没敌人 + 进攻超过 3 分钟 + HP 大于 200：切防御姿态 -->
             <Sequence>
@@ -235,13 +305,13 @@
 
               <IsStatusOK hp_min="201"
                           heat_max="999"
-                          ammo_min="50"
+                          ammo_min="0"
                           key_port="{@referee_robotStatus}"/>
 
               <SetSentryCmd posture_command="2"
                             topic_name="sentry_cmd"/>
 
-              <PublishSpinSpeed spin_speed="7.0"
+              <PublishSpinSpeed spin_speed="10.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
             </Sequence>
@@ -269,7 +339,7 @@
                                 topic_name="cmd_spin"/>
 
               <!-- 补给区点位：改撤退目标点就改这里 -->
-              <PubNav2Goal goal="-1.0;-7.0;0.0"
+              <PubNav2Goal goal="-1.7;-6.2;0"
                            topic_name="goal_pose"/>
             </Sequence>
 
@@ -280,16 +350,19 @@
                           ammo_min="50"
                           key_port="{@referee_robotStatus}"/>
 
-              <PublishSpinSpeed spin_speed="7.0"
+              <SetSentryCmd posture_command="3"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="14.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
 
               <!-- 常态巡逻/进攻待机点：改这里，不再依赖发现敌人 -->
-              <PubNav2Goal goal="3.65;-3.5;0"
+              <PubNav2Goal goal="4.88;-0.59;0"
                            map_command="{@map_command}"
                            map_command_team="red"
-                           map_command_red_origin_x="2.7"
-                           map_command_red_origin_y="9.9"
+                           map_command_red_origin_x="3.879"
+                           map_command_red_origin_y="8.087"
                            map_command_blue_origin_x="26.0"
                            map_command_blue_origin_y="6.0"
                            map_command_offset_x="0.0"
@@ -298,11 +371,26 @@
                            topic_name="goal_pose"/>
             </Sequence>
 
-            <!-- 12. 兜底：只保持普通小陀螺，不发姿态、不发导航 -->
+            <!-- 12. 兜底：移动姿态 + 巡逻点，避免低弹但金币不足时只转不走 -->
             <Sequence>
-              <PublishSpinSpeed spin_speed="7.0"
+              <SetSentryCmd posture_command="3"
+                            topic_name="sentry_cmd"/>
+
+              <PublishSpinSpeed spin_speed="14.0"
                                 duration="0.0"
                                 topic_name="cmd_spin"/>
+
+              <PubNav2Goal goal="4.88;-0.59;0"
+                          map_command="{@map_command}"
+                          map_command_team="red"
+                           map_command_red_origin_x="3.879"
+                           map_command_red_origin_y="8.087"
+                          map_command_blue_origin_x="26.0"
+                          map_command_blue_origin_y="6.0"
+                          map_command_offset_x="0.0"
+                          map_command_offset_y="0.0"
+                          map_command_yaw="0.0"
+                          topic_name="goal_pose"/>
             </Sequence>
 
           </ReactiveFallback>
@@ -335,6 +423,11 @@
       <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
     </Condition>
 
+    <Condition ID="IsGoldCoinEnough">
+      <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+      <input_port name="min_gold" default="150" type="int">Minimum remaining gold coin</input_port>
+    </Condition>
+
     <Condition ID="IsDead">
       <input_port name="key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
     </Condition>
@@ -356,7 +449,7 @@
     </Condition>
 
     <Condition ID="IsAttackState">
-      <input_port name="mode" default="keep_attack" type="std::string">enemy_visible / keep_attack / can_leave</input_port>
+      <input_port name="mode" default="keep_attack" type="std::string">enemy_visible / keep_attack / can_leave / reset</input_port>
       <input_port name="topic_name" default="cmd_gimbal" type="std::string">Gimbal command topic</input_port>
       <input_port name="detect_timeout_ms" default="500" type="int">Enemy detection timeout</input_port>
       <input_port name="no_enemy_timeout_s" default="60.0" type="double">No enemy timeout</input_port>
@@ -367,8 +460,8 @@
       <input_port name="goal" default="0;0;0" type="std::string">Goal in x;y;yaw format</input_port>
       <input_port name="map_command" default="{@map_command}">Map command point from /mapcommand</input_port>
       <input_port name="map_command_team" default="red" type="std::string">red or blue map command transform</input_port>
-      <input_port name="map_command_red_origin_x" default="2.7" type="double">Red origin X in field coordinates</input_port>
-      <input_port name="map_command_red_origin_y" default="9.9" type="double">Red origin Y in field coordinates</input_port>
+      <input_port name="map_command_red_origin_x" default="2.6" type="double">Red origin X in field coordinates</input_port>
+      <input_port name="map_command_red_origin_y" default="9.1" type="double">Red origin Y in field coordinates</input_port>
       <input_port name="map_command_blue_origin_x" default="26.0" type="double">Blue origin X in field coordinates</input_port>
       <input_port name="map_command_blue_origin_y" default="6.0" type="double">Blue origin Y in field coordinates</input_port>
       <input_port name="map_command_offset_x" default="0.0" type="double">Offset added to map command X</input_port>
@@ -400,6 +493,21 @@
       <input_port name="posture_command" default="0" type="int">Posture command: 1 attack, 2 defense, 3 move, 0 unchanged</input_port>
       <input_port name="activate_rune" default="false" type="bool">Activate rune</input_port>
       <input_port name="topic_name" default="sentry_cmd" type="std::string">Topic name</input_port>
+    </Action>
+
+    <Action ID="ExchangeProjectileOnce">
+      <input_port name="rfid_key_port" default="{@referee_rfidStatus}">RfidStatus port on blackboard</input_port>
+      <input_port name="robot_status_key_port" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
+      <input_port name="friendly_supply_zone_exchange" default="true" type="bool">Use friendly supply zone exchange flag</input_port>
+      <input_port name="friendly_supply_zone_non_exchange" default="true" type="bool">Use friendly supply zone non-exchange flag</input_port>
+      <input_port name="ammo_threshold" default="50" type="int">Only exchange when projectile allowance is lower than this value</input_port>
+      <input_port name="min_gold" default="150" type="int">Minimum remaining gold coin required before exchange</input_port>
+      <input_port name="base_exchange" default="150" type="int">First exchange projectile amount</input_port>
+      <input_port name="increment_step" default="1" type="int">Increase exchange amount by this value every new supply-zone visit</input_port>
+      <input_port name="max_exchange" default="500" type="int">Maximum projectile exchange value clamp</input_port>
+      <input_port name="topic_name" default="sentry_cmd" type="std::string">Topic name of SentryCmd</input_port>
+      <input_port name="leave_confirm_s" default="1.0" type="double">Supply zone RFID lost duration before confirming leave</input_port>
+      <input_port name="exchange_cooldown_s" default="8.0" type="double">Minimum interval between exchange commands</input_port>
     </Action>
 
   </TreeNodesModel>

@@ -46,6 +46,8 @@ public:
   bool checkinit();
 
 private:
+  bool diverged_raw() const;
+
   int armor_num_;
   int switch_count_;
   int update_count_;
@@ -54,6 +56,12 @@ private:
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;
+
+  static constexpr double kRadiusLow = 0.05;
+  static constexpr double kRadiusHigh = 0.5;
+  static constexpr int kDivergedBadFrames = 3;
+
+  mutable int diverged_bad_streak_{0};
 
   void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
 

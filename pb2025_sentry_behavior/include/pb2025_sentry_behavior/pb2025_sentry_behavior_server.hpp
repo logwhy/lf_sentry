@@ -74,6 +74,10 @@ private:
     const std::string & topic, const std::string & bb_key,
     const rclcpp::QoS & qos = rclcpp::QoS(10));
 
+  void subscribeMapCommand(
+    const std::string & topic, const std::string & bb_key,
+    const rclcpp::QoS & qos = rclcpp::QoS(10));
+
   std::vector<std::shared_ptr<rclcpp::SubscriptionBase>> subscriptions_;
   std::shared_ptr<BT::StdCoutLogger> logger_cout_;
   uint32_t tick_count_;

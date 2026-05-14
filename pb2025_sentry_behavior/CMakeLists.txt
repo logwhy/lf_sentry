@@ -71,6 +71,9 @@ list(APPEND plugin_libs is_hp_decreased)
 ament_auto_add_library(is_attack_state SHARED plugins/condition/is_attack_state.cpp)
 list(APPEND plugin_libs is_attack_state)
 
+ament_auto_add_library(is_gold_coin_enough SHARED plugins/condition/is_gold_coin_enough.cpp)
+list(APPEND plugin_libs is_gold_coin_enough)
+
 ####### Actions #######
 ament_auto_add_library(send_nav2_goal SHARED plugins/action/send_nav2_goal.cpp)
 list(APPEND plugin_libs send_nav2_goal)

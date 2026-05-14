@@ -37,6 +37,11 @@ Target::Target(
   // l: r2 - r1
   // h: z2 - z1
   Eigen::VectorXd x0{{center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, 0}};  //初始化预测量
+
+  // if (armor.name == ArmorName::outpost && armor_num == 3) {
+  //   x0[9] = 0.112;
+  //   x0[10] = -0.112;
+  // }
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   // 防止夹角求和出现异常值
@@ -158,10 +163,14 @@ void Target::update(const Armor & armor)
   // 取前3个distance最小的装甲板
 
   const int candidate_num = std::min(3, static_cast<int>(xyza_i_list.size()));
-  for (int i = 0; i < candidate_num; i++) {    const auto & xyza = xyza_i_list[i].first;
+  for (int i = 0; i < candidate_num; i++) {
+    const auto & xyza = xyza_i_list[i].first;
     Eigen::Vector3d ypd = tools::xyz2ypd(xyza.head(3));
     auto angle_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
                        std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
+    if (name == ArmorName::outpost) {
+      angle_error += std::abs(tools::limit_rad(armor.ypd_in_world[1] - ypd[1]));
+    }
 
     if (std::abs(angle_error) < std::abs(min_angle_error)) {
       id = xyza_i_list[i].second;
@@ -172,13 +181,17 @@ void Target::update(const Armor & armor)
   if (id != 0) jumped = true;
 
   is_switch_ = (id != last_id);
-  if (is_switch_ && std::abs(ekf_.x[7]) < 0.8) {
+  if (is_switch_ && name != ArmorName::outpost && std::abs(ekf_.x[7]) < 0.8) {
     // 低角速度时尽量不轻易认定为切板
     id = last_id;
     is_switch_ = false;
   }
 
   if (is_switch_) switch_count_++;
+
+  if (name == ArmorName::outpost && armor_num_ == 3) {
+    id = OUTPOST_BOTTOM_ARMOR_ID;  // 只用最下面那块板更新
+  }
 
   last_id = id;
   update_count_++;
@@ -240,25 +253,39 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
   return _armor_xyza_list;
 }
 
+bool Target::diverged_raw() const
+{
+  auto r_ok = ekf_.x[8] > kRadiusLow && ekf_.x[8] < kRadiusHigh;
+  if (armor_num_ != 4) return !r_ok;
+
+  auto r2_ok = ekf_.x[8] + ekf_.x[9] > kRadiusLow && ekf_.x[8] + ekf_.x[9] < kRadiusHigh;
+  return !(r_ok && r2_ok);
+}
+
 bool Target::diverged() const
 {
-  auto r_ok = ekf_.x[8] > 0.05 && ekf_.x[8] < 0.5;
-  auto l_ok = ekf_.x[8] + ekf_.x[9] > 0.05 && ekf_.x[8] + ekf_.x[9] < 0.5;
+  if (!diverged_raw()) {
+    diverged_bad_streak_ = 0;
+    return false;
+  }
 
-  if (r_ok && l_ok) return false;
+  diverged_bad_streak_++;
+  if (diverged_bad_streak_ < kDivergedBadFrames) return false;
 
-  tools::logger()->debug("[Target] r={:.3f}, l={:.3f}", ekf_.x[8], ekf_.x[9]);
+  tools::logger()->debug(
+    "[Target] diverged: r={:.3f}, x9={:.3f}, x10={:.3f}, bad_frames={}", ekf_.x[8], ekf_.x[9],
+    ekf_.x[10], diverged_bad_streak_);
   return true;
 }
 
 bool Target::convergened()
 {
-  if (this->name != ArmorName::outpost && update_count_ > 3 && !this->diverged()) {
+  if (this->name != ArmorName::outpost && update_count_ > 3 && !this->diverged_raw()) {
     is_converged_ = true;
   }
 
   //前哨站特殊判断
-  if (this->name == ArmorName::outpost && update_count_ > 10 && !this->diverged()) {
+  if (this->name == ArmorName::outpost && update_count_ > 10 && !this->diverged_raw()) {
     is_converged_ = true;
   }
 
@@ -269,12 +296,19 @@ bool Target::convergened()
 Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
 {
   auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
-  auto use_l_h = (armor_num_ == 4) && (id == 1 || id == 3);
 
-  auto r = (use_l_h) ? x[8] + x[9] : x[8];
+  auto use_second_radius = (armor_num_ == 4) && (id == 1 || id == 3);
+  auto r = use_second_radius ? x[8] + x[9] : x[8];
   auto armor_x = x[0] - r * std::cos(angle);
   auto armor_y = x[2] - r * std::sin(angle);
-  auto armor_z = (use_l_h) ? x[4] + x[10] : x[4];
+
+  auto armor_z = x[4];
+  if (name == ArmorName::outpost && armor_num_ == 3) {
+    if (id == 1) armor_z += x[9];
+    if (id == 2) armor_z += x[10];
+  } else if (use_second_radius) {
+    armor_z += x[10];
+  }
 
   return {armor_x, armor_y, armor_z};
 }
@@ -282,24 +316,31 @@ Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
 Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
 {
   auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
-  auto use_l_h = (armor_num_ == 4) && (id == 1 || id == 3);
+  auto use_second_radius = (armor_num_ == 4) && (id == 1 || id == 3);
 
-  auto r = (use_l_h) ? x[8] + x[9] : x[8];
+  auto r = use_second_radius ? x[8] + x[9] : x[8];
   auto dx_da = r * std::sin(angle);
   auto dy_da = -r * std::cos(angle);
 
   auto dx_dr = -std::cos(angle);
   auto dy_dr = -std::sin(angle);
-  auto dx_dl = (use_l_h) ? -std::cos(angle) : 0.0;
-  auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
+  auto dx_dl = use_second_radius ? -std::cos(angle) : 0.0;
+  auto dy_dl = use_second_radius ? -std::sin(angle) : 0.0;
 
-  auto dz_dh = (use_l_h) ? 1.0 : 0.0;
+  auto dz_dl = 0.0;
+  auto dz_dh = 0.0;
+  if (name == ArmorName::outpost && armor_num_ == 3) {
+    if (id == 1) dz_dl = 1.0;
+    if (id == 2) dz_dh = 1.0;
+  } else if (use_second_radius) {
+    dz_dh = 1.0;
+  }
 
   // clang-format off
   Eigen::MatrixXd H_armor_xyza{
     {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0},
     {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0},
-    {0, 0, 0, 0, 1, 0,     0, 0,     0,     0, dz_dh},
+    {0, 0, 0, 0, 1, 0,     0, 0,     0, dz_dl, dz_dh},
     {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0}
   };
   // clang-format on

@@ -37,6 +37,7 @@
             <input_port name="topic_name" type="std::string" default="sentry_cmd">Topic name of SentryCmd</input_port>
             <input_port name="base_exchange" type="int" default="150">First exchange projectile amount</input_port>
             <input_port name="max_exchange" type="int" default="500">Maximum projectile exchange value clamp</input_port>
+            <input_port name="min_gold" type="int" default="150">Do not exchange projectile if remaining_gold_coin is lower than this value</input_port>
             <input_port name="friendly_supply_zone_exchange" type="bool" default="true">Use friendly supply zone exchange flag</input_port>
             <input_port name="ammo_threshold" type="int" default="50">Only exchange when projectile allowance is lower than this value</input_port>
             <input_port name="friendly_supply_zone_non_exchange" type="bool" default="true">Use friendly supply zone non-exchange flag</input_port>
@@ -48,7 +49,7 @@
             <input_port name="no_enemy_timeout_s" type="double" default="60.000000">No enemy duration before leaving attack</input_port>
             <input_port name="detect_timeout_ms" type="int" default="500">Enemy visible timeout in milliseconds</input_port>
             <input_port name="topic_name" type="std::string" default="cmd_gimbal">Topic name of gimbal command</input_port>
-            <input_port name="mode" type="std::string" default="keep_attack">keep_attack / can_leave / enemy_visible</input_port>
+            <input_port name="mode" type="std::string" default="keep_attack">keep_attack / can_leave / enemy_visible / reset</input_port>
         </Condition>
         <Condition ID="IsAttacked">
             <output_port name="gimbal_yaw" type="float" default="{gimbal_yaw}">Move gimbal_yaw to the direction of the hit armor plate</output_port>
@@ -72,6 +73,10 @@
             <input_port name="goal" type="std::string" default="0;0;0">Goal format: x;y;yaw or x;y;z;yaw</input_port>
             <input_port name="pos_tolerance" type="double" default="0.500000">Position tolerance in meters</input_port>
             <input_port name="topic_name" type="std::string" default="__default__placeholder__">Topic name</input_port>
+        </Condition>
+        <Condition ID="IsGoldCoinEnough">
+            <input_port name="min_gold" type="int" default="150">Minimum remaining gold coin</input_port>
+            <input_port name="key_port" type="pb_rm_interfaces::msg::RobotStatus_&lt;std::allocator&lt;void&gt; &gt;" default="{@referee_robotStatus}">RobotStatus port on blackboard</input_port>
         </Condition>
         <Condition ID="IsHpDecreased">
             <input_port name="hold_s" type="double" default="10.000000">Keep SUCCESS after triggered, in seconds</input_port>
@@ -98,8 +103,17 @@
         </Condition>
         <Condition ID="PubNav2Goal">
             <input_port name="goal" type="std::string" default="0;0;0">Goal in format 'x;y;yaw' or 'x;y;z;yaw'</input_port>
+            <input_port name="map_command_offset_y" type="double" default="0.000000">Offset added to map command Y</input_port>
             <input_port name="goal_pose" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;">PoseStamped goal from blackboard</input_port>
+            <input_port name="map_command" type="geometry_msgs::msg::Point_&lt;std::allocator&lt;void&gt; &gt;">Map command point from blackboard</input_port>
+            <input_port name="map_command_offset_x" type="double" default="0.000000">Offset added to map command X</input_port>
             <input_port name="frame_id" type="std::string" default="map">Frame ID for the goal pose</input_port>
+            <input_port name="map_command_team" type="std::string" default="red">red or blue map command transform</input_port>
+            <input_port name="map_command_red_origin_x" type="double" default="2.700000">Red origin X in field coordinates</input_port>
+            <input_port name="map_command_red_origin_y" type="double" default="9.900000">Red origin Y in field coordinates</input_port>
+            <input_port name="map_command_blue_origin_x" type="double" default="26.000000">Blue origin X in field coordinates</input_port>
+            <input_port name="map_command_yaw" type="double" default="0.000000">Yaw used for map command goal</input_port>
+            <input_port name="map_command_blue_origin_y" type="double" default="6.000000">Blue origin Y in field coordinates</input_port>
             <input_port name="topic_name" type="std::string" default="__default__placeholder__">Topic name</input_port>
         </Condition>
         <Action ID="PublishGimbalAbsolute">

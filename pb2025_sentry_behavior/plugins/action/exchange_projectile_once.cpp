@@ -1,6 +1,7 @@
 #include "pb2025_sentry_behavior/plugins/action/exchange_projectile_once.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 
 #include "behaviortree_cpp/bt_factory.h"
@@ -42,6 +43,11 @@ BT::PortsList ExchangeProjectileOnceAction::providedPorts()
       "ammo_threshold",
       50,
       "Only exchange when projectile allowance is lower than this value"),
+
+    BT::InputPort<int>(
+      "min_gold",
+      150,
+      "Do not exchange projectile if remaining_gold_coin is lower than this value"),
 
     BT::InputPort<int>(
       "base_exchange",
@@ -121,7 +127,7 @@ void ExchangeProjectileOnceAction::publishExchangeCommand(int exchange_amount)
 
   msg.confirm_respawn = false;
   msg.confirm_pay_respawn = false;
-  msg.projectile_allowance_to_exchange = static_cast<uint16_t>(std::max(0, exchange_amount));
+  msg.projectile_allowance_to_exchange = static_cast<std::uint16_t>(std::max(0, exchange_amount));
   msg.remote_projectile_request_count = 0;
   msg.remote_hp_request_count = 0;
   msg.posture_command = 0;
@@ -136,7 +142,8 @@ BT::NodeStatus ExchangeProjectileOnceAction::tick()
 
   auto rfid_msg = getInput<pb_rm_interfaces::msg::RfidStatus>("rfid_key_port");
   if (!rfid_msg) {
-    RCLCPP_WARN(logger_, "[ExchangeProjectileOnce] missing RfidStatus: %s", rfid_msg.error().c_str());
+    RCLCPP_WARN(
+      logger_, "[ExchangeProjectileOnce] missing RfidStatus: %s", rfid_msg.error().c_str());
     return BT::NodeStatus::FAILURE;
   }
 
@@ -151,11 +158,13 @@ BT::NodeStatus ExchangeProjectileOnceAction::tick()
   }
 
   int ammo_threshold = 50;
+  int min_gold = 150;
   int base_exchange = 150;
-  int increment_step = 1;
+  int increment_step = 150;
   int max_exchange = 500;
 
   getInput("ammo_threshold", ammo_threshold);
+  getInput("min_gold", min_gold);
   getInput("base_exchange", base_exchange);
   getInput("increment_step", increment_step);
   getInput("max_exchange", max_exchange);
@@ -163,8 +172,9 @@ BT::NodeStatus ExchangeProjectileOnceAction::tick()
   const bool in_supply_zone = isInSupplyZone(rfid_msg.value());
   const int current_ammo =
     static_cast<int>(robot_status_msg.value().projectile_allowance_17mm);
+  const int remaining_gold_coin =
+    static_cast<int>(robot_status_msg.value().remaining_gold_coin);
 
-  // 不在补给区：认为本次补给区访问结束，允许下一次进入补给区时再次兑换
   if (!in_supply_zone) {
     if (was_in_supply_zone_) {
       RCLCPP_INFO(
@@ -179,17 +189,17 @@ BT::NodeStatus ExchangeProjectileOnceAction::tick()
 
   was_in_supply_zone_ = true;
 
-  // 在补给区，但弹丸不少于阈值：不兑换，但保持“本次访问”的状态
   if (current_ammo >= ammo_threshold) {
     return BT::NodeStatus::FAILURE;
   }
 
-  // 在补给区，弹丸少于阈值，并且本次访问还没有兑换过：只兑换一次
+  if (remaining_gold_coin < min_gold) {
+    return BT::NodeStatus::FAILURE;
+  }
+
   if (!exchanged_this_visit_) {
     int exchange_amount = base_exchange + exchange_index_ * increment_step;
     exchange_amount = std::clamp(exchange_amount, 0, max_exchange);
-
-    publishExchangeCommand(exchange_amount);
 
     last_exchange_amount_ = exchange_amount;
     exchanged_this_visit_ = true;
@@ -202,11 +212,10 @@ BT::NodeStatus ExchangeProjectileOnceAction::tick()
       ammo_threshold,
       exchange_amount,
       std::clamp(base_exchange + exchange_index_ * increment_step, 0, max_exchange));
-
-    return BT::NodeStatus::SUCCESS;
   }
 
-  // 在同一次补给区访问期间，不再重复兑换，兑弹数量也不改变
+  publishExchangeCommand(last_exchange_amount_);
+
   RCLCPP_DEBUG(
     logger_,
     "[ExchangeProjectileOnce] already exchanged this visit, keep amount=%d, no republish",

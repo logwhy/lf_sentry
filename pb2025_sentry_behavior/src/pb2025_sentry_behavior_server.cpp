@@ -15,6 +15,7 @@
 #include "pb2025_sentry_behavior/pb2025_sentry_behavior_server.hpp"
 #include "pb2025_sentry_behavior/custom_types.hpp"
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -33,6 +34,13 @@
 #include "pb_rm_interfaces/msg/sentry_info.hpp"
 namespace pb2025_sentry_behavior
 {
+namespace
+{
+bool isValidMapCommand(const geometry_msgs::msg::Point & msg)
+{
+  return std::abs(msg.x) > 1e-6 || std::abs(msg.y) > 1e-6;
+}
+}  // namespace
 
 template <typename T>
 void SentryBehaviorServer::subscribe(
@@ -41,6 +49,21 @@ void SentryBehaviorServer::subscribe(
   auto sub = node()->create_subscription<T>(
     topic, qos,
     [this, bb_key](const typename T::SharedPtr msg) { globalBlackboard()->set(bb_key, *msg); });
+  subscriptions_.push_back(sub);
+}
+
+void SentryBehaviorServer::subscribeMapCommand(
+  const std::string & topic, const std::string & bb_key, const rclcpp::QoS & qos)
+{
+  auto sub = node()->create_subscription<geometry_msgs::msg::Point>(
+    topic, qos,
+    [this, bb_key](const geometry_msgs::msg::Point::SharedPtr msg) {
+      if (!isValidMapCommand(*msg)) {
+        return;
+      }
+
+      globalBlackboard()->set(bb_key, *msg);
+    });
   subscriptions_.push_back(sub);
 }
 
@@ -59,7 +82,7 @@ SentryBehaviorServer::SentryBehaviorServer(const rclcpp::NodeOptions & options)
   subscribe<pb_rm_interfaces::msg::RobotStatus>("referee/robot_status", "referee_robotStatus");
   subscribe<pb_rm_interfaces::msg::Buff>("referee/buff", "referee_buff");
   subscribe<pb_rm_interfaces::msg::SentryInfo>("referee/sentry_info", "referee_sentryInfo");
-  subscribe<geometry_msgs::msg::Point>("/mapcommand", "map_command");
+  subscribeMapCommand("/mapcommand", "map_command");
 
   auto detector_qos = rclcpp::SensorDataQoS();
   subscribe<auto_aim_interfaces::msg::Armors>("detector/armors", "detector_armors", detector_qos);

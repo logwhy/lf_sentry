@@ -14,6 +14,7 @@
 
 #include "standard_robot_pp_ros2/standard_robot_pp_ros2.hpp"
 
+#include <cmath>
 #include <memory>
 
 #include "standard_robot_pp_ros2/crc8_crc16.hpp"
@@ -28,6 +29,11 @@ using namespace std::chrono_literals;
 
 namespace standard_robot_pp_ros2
 {
+namespace
+{
+constexpr float kMinBulletSpeed = 17.0F;
+constexpr float kFallbackBulletSpeed = 20.0F;
+}  // namespace
 
 StandardRobotPpRos2Node::StandardRobotPpRos2Node(const rclcpp::NodeOptions & options)
 : Node("StandardRobotPpRos2Node", options),
@@ -98,6 +104,7 @@ void StandardRobotPpRos2Node::createPublisher()
   buff_pub_ = this->create_publisher<pb_rm_interfaces::msg::Buff>("referee/buff", 10);
   sentry_info_pub_ = this->create_publisher<pb_rm_interfaces::msg::SentryInfo>("referee/sentry_info", 10);
   map_command_pub_ = this->create_publisher<geometry_msgs::msg::Point>("/mapcommand", 10);
+  bullet_speed_pub_ = this->create_publisher<example_interfaces::msg::Float32>("/BulletSpeed", 10);
 }
 
 void StandardRobotPpRos2Node::createNewDebugPublisher(const std::string & name)
@@ -403,6 +410,10 @@ void StandardRobotPpRos2Node::receiveData()
         case ID_MAP_COMMAND: {
           ReceiveMapCommandData map_command_data = fromVector<ReceiveMapCommandData>(data_buf);
           publishMapCommand(map_command_data);
+        } break;
+        case ID_BULLET_SPEED: {
+          ReceiveBulletSpeedData bullet_speed_data = fromVector<ReceiveBulletSpeedData>(data_buf);
+          publishBulletSpeed(bullet_speed_data);
         } break;
         default: {
           RCLCPP_WARN(get_logger(), "Invalid id: %d", header_frame.id);
@@ -749,6 +760,20 @@ void StandardRobotPpRos2Node::publishMapCommand(ReceiveMapCommandData & map_comm
   msg.y = map_command.data.target_position_y;
   msg.z = 0.0;
   map_command_pub_->publish(msg);
+}
+
+void StandardRobotPpRos2Node::publishBulletSpeed(ReceiveBulletSpeedData & bullet_speed)
+{
+  example_interfaces::msg::Float32 msg;
+  msg.data = bullet_speed.data.bullet_speed;
+  if (!std::isfinite(msg.data) || msg.data < kMinBulletSpeed) {
+    // RCLCPP_WARN_THROTTLE(
+    //   get_logger(), *get_clock(), 1000,
+    //   "Bullet speed %.2f is invalid or lower than %.2f, using %.2f", msg.data, kMinBulletSpeed,
+    //   kFallbackBulletSpeed);
+    msg.data = kFallbackBulletSpeed;
+  }
+  bullet_speed_pub_->publish(msg);
 }
 
 /********************************************************/

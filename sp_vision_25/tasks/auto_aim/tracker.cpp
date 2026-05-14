@@ -9,6 +9,9 @@
 
 namespace auto_aim
 {
+namespace{
+  constexpr int OUTPOST_BOTTOM_ARMOR_ID = 2;
+}
 Tracker::Tracker(const std::string & config_path, Solver & solver)
 : solver_{solver},
   detect_count_(0),
@@ -232,6 +235,15 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
 {
   if (armors.empty()) return false;
 
+  if (!armors.empty() && armors.front().name == ArmorName::outpost) {
+    armors.sort([](const Armor & a, const Armor & b) {
+      if (a.name == ArmorName::outpost && b.name == ArmorName::outpost) {
+        return a.center.y > b.center.y;  // 图像中更靠下的 outpost 装甲板优先
+      }
+      return a.priority < b.priority;
+    });
+  }
+
   auto & armor = armors.front();
   solver_.solve(armor);
 
@@ -246,7 +258,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   }
 
   else if (armor.name == ArmorName::outpost) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 0}};
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 1, 1}};
     target_ = Target(armor, t, 0.2765, 3, P0_dig);
   }
 
@@ -294,23 +306,30 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     const auto & obs_yaw = armor.ypr_in_world[0];
 
     double min_cost_this_armor = 1e9;
-    int best_pred_id_this_armor = -1;
-
-    // 与预测的每一块装甲板比较，选这个观测最可能对应的那块
+        // 与预测的每一块装甲板比较，选这个观测最可能对应的那块
     for (int i = 0; i < static_cast<int>(pred_xyza_list.size()); ++i) {
+      // outpost 只打最下面那块板：id = 2
+      if (target_.name == ArmorName::outpost && i != OUTPOST_BOTTOM_ARMOR_ID) {
+        continue;
+      }
+
       const auto & pred_xyza = pred_xyza_list[i];
       Eigen::Vector3d pred_xyz = pred_xyza.head<3>();
       Eigen::Vector3d pred_ypd = tools::xyz2ypd(pred_xyz);
       double pred_yaw = pred_xyza[3];
 
-      // 代价函数：距离 + yaw差 + ypd yaw差
       double cost_dist = std::abs(obs_ypd[2] - pred_ypd[2]);
       double cost_yaw = std::abs(tools::limit_rad(obs_yaw - pred_yaw));
       double cost_view = std::abs(tools::limit_rad(obs_ypd[0] - pred_ypd[0]));
+      double cost_pitch = std::abs(tools::limit_rad(obs_ypd[1] - pred_ypd[1]));
 
       double cost = 2.0 * cost_dist + 1.5 * cost_yaw + 1.0 * cost_view;
 
-      // 加切换惩罚：防止左右横跳
+      if (target_.name == ArmorName::outpost) {
+        // 下板筛选时提高 pitch 权重，避免误把中板/上板当下板
+        cost += 2.0 * cost_pitch;
+      }
+
       if (i != target_.last_id) {
         cost += 0.35;
       }
@@ -319,7 +338,6 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
         min_cost_this_armor = cost;
       }
     }
-
     if (min_cost_this_armor < best_cost) {
       best_cost = min_cost_this_armor;
       best_armor = &armor;
